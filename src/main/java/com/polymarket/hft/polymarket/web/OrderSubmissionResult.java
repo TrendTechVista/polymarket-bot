@@ -5,9 +5,9 @@ import com.polymarket.hft.config.HftProperties;
 import com.polymarket.hft.polymarket.model.SignedOrder;
 
 public record OrderSubmissionResult(
-        HftProperties.TradingMode mode,
-        SignedOrder signedOrder,
-        JsonNode clobResponse
+    HftProperties.TradingMode mode,
+    SignedOrder signedOrder,
+    JsonNode clobResponse
 ) {
 }
 
