@@ -1,0 +1,358 @@
+package com.polymarket.hft.polymarket.clob;
+
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.polymarket.hft.polymarket.crypto.Eip712Signer;
+import com.polymarket.hft.polymarket.crypto.PolyHmacSigner;
+import com.polymarket.hft.polymarket.model.ApiCreds;
+import com.polymarket.hft.polymarket.model.ClobOrderType;
+import com.polymarket.hft.polymarket.model.OrderBook;
+import com.polymarket.hft.polymarket.model.SignedOrder;
+
+import org.springframework.http.HttpMethod;
+import org.web3j.crypto.Credentials;
+
+public final class PolymarketClobClient {
+
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(10);
+
+    private final URI baseUri;
+    private final HttpClient httpClient;
+    private final ObjectMapper objectMapper;
+    private final Clock clock;
+    private final int chainId;
+    private final boolean useServerTime;
+
+    private final AtomicLong serverTimeOffsetSeconds = new AtomicLong(0);
+    private volatile Instant lastServerTimeSync = Instant.EPOCH;
+    private final Duration serverTimeTtl = Duration.ofSeconds(30);
+
+    public PolymarketClobClient(
+            URI baseUri,
+            HttpClient httpClient,
+            ObjectMapper objectMapper,
+            Clock clock,
+            int chainId,
+            boolean useServerTime
+    ) {
+        this.baseUri = Objects.requireNonNull(baseUri, "baseUri");
+        this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.clock = Objects.requireNonNull(clock, "clock");
+        this.chainId = chainId;
+        this.useServerTime = useServerTime;
+    }
+
+    public long getServerTimeSeconds() {
+        String raw = getString("/time", Map.of(), Map.of());
+        return Long.parseLong(raw.trim());
+    }
+
+    public OrderBook getOrderBook(String tokenId) {
+        return getJson("/book", Map.of("token_id", tokenId), Map.of(), OrderBook.class);
+    }
+
+    public BigDecimal getMinimumTickSize(String tokenId) {
+        JsonNode node = getJsonNode("/tick-size", Map.of("token_id", tokenId), Map.of());
+        return node.get("minimum_tick_size").decimalValue();
+    }
+
+    public boolean isNegRisk(String tokenId) {
+        JsonNode node = getJsonNode("/neg-risk", Map.of("token_id", tokenId), Map.of());
+        return node.get("neg_risk").booleanValue();
+    }
+
+    public int getBaseFeeBps(String tokenId) {
+        JsonNode node = getJsonNode("/fee-rate", Map.of("token_id", tokenId), Map.of());
+        return node.get("base_fee").intValue();
+    }
+
+    public ApiCreds createApiCreds(Credentials signingCredentials, long nonce) {
+        return l1Auth(signingCredentials, HttpMethod.POST, "/auth/api-key", null, nonce, ApiCredsRaw.class)
+                .toCreds();
+    }
+
+    public ApiCreds deriveApiCreds(Credentials signingCredentials, long nonce) {
+        return l1Auth(signingCredentials, HttpMethod.GET, "/auth/derive-api-key", null, nonce, ApiCredsRaw.class)
+                .toCreds();
+    }
+
+    public ApiCreds createOrDeriveApiCreds(Credentials signingCredentials, long nonce) {
+        try {
+            ApiCreds created = createApiCreds(signingCredentials, nonce);
+            if (created.key() != null && !created.key().isBlank()) {
+                return created;
+            }
+        } catch (RuntimeException ignored) {
+            // fall through to derive
+        }
+        return deriveApiCreds(signingCredentials, nonce);
+    }
+
+    public JsonNode postOrder(
+            Credentials signingCredentials,
+            ApiCreds apiCreds,
+            SignedOrder order,
+            ClobOrderType orderType,
+            boolean deferExec
+    ) {
+        Objects.requireNonNull(order, "order");
+        if (order.signature() == null || order.signature().isBlank()) {
+            throw new IllegalArgumentException("order.signature must be set");
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        Map<String, Object> orderObj = new LinkedHashMap<>();
+        orderObj.put("salt", Long.parseLong(order.salt()));
+        orderObj.put("maker", order.maker());
+        orderObj.put("signer", order.signer());
+        orderObj.put("taker", order.taker());
+        orderObj.put("tokenId", order.tokenId());
+        orderObj.put("makerAmount", order.makerAmount());
+        orderObj.put("takerAmount", order.takerAmount());
+        orderObj.put("expiration", order.expiration());
+        orderObj.put("nonce", order.nonce());
+        orderObj.put("feeRateBps", order.feeRateBps());
+        orderObj.put("side", order.side().name());
+        orderObj.put("signatureType", order.signatureType());
+        orderObj.put("signature", order.signature());
+        payload.put("order", orderObj);
+        payload.put("owner", apiCreds.key());
+        payload.put("orderType", orderType.name());
+        payload.put("deferExec", deferExec);
+
+        String body = writeJson(payload);
+        Map<String, String> headers = l2Headers(signingCredentials, apiCreds, HttpMethod.POST, "/order", body);
+        return postJsonNode("/order", Map.of(), headers, body);
+    }
+
+    public JsonNode cancelOrder(Credentials signingCredentials, ApiCreds apiCreds, String orderId) {
+        Map<String, Object> payload = Map.of("orderID", orderId);
+        String body = writeJson(payload);
+        Map<String, String> headers = l2Headers(signingCredentials, apiCreds, HttpMethod.DELETE, "/order", body);
+        return deleteJsonNode("/order", headers, body);
+    }
+
+    private <T> T l1Auth(
+            Credentials signingCredentials,
+            HttpMethod method,
+            String path,
+            String body,
+            long nonce,
+            Class<T> responseType
+    ) {
+        long ts = authTimestampSeconds();
+        String address = signingCredentials.getAddress();
+
+        String signature = Eip712Signer.signClobAuth(signingCredentials, chainId, ts, nonce);
+
+        Map<String, String> headers = Map.of(
+                "POLY_ADDRESS", address,
+                "POLY_SIGNATURE", signature,
+                "POLY_TIMESTAMP", Long.toString(ts),
+                "POLY_NONCE", Long.toString(nonce)
+        );
+
+        if (method == HttpMethod.GET) {
+            return getJson(path, Map.of(), headers, responseType);
+        }
+        if (method == HttpMethod.POST) {
+            return postJson(path, Map.of(), headers, body, responseType);
+        }
+        throw new IllegalArgumentException("Unsupported L1 method: " + method);
+    }
+
+    private Map<String, String> l2Headers(
+            Credentials signingCredentials,
+            ApiCreds creds,
+            HttpMethod method,
+            String requestPath,
+            String body
+    ) {
+        long ts = authTimestampSeconds();
+        String address = signingCredentials.getAddress();
+        String sig = PolyHmacSigner.sign(creds.secret(), ts, method.name(), requestPath, body);
+
+        return Map.of(
+                "POLY_ADDRESS", address,
+                "POLY_SIGNATURE", sig,
+                "POLY_TIMESTAMP", Long.toString(ts),
+                "POLY_API_KEY", creds.key(),
+                "POLY_PASSPHRASE", creds.passphrase()
+        );
+    }
+
+    private long authTimestampSeconds() {
+        if (!useServerTime) {
+            return Instant.now(clock).getEpochSecond();
+        }
+
+        Instant now = Instant.now(clock);
+        if (Duration.between(lastServerTimeSync, now).compareTo(serverTimeTtl) > 0) {
+            long serverTime = getServerTimeSeconds();
+            long local = now.getEpochSecond();
+            serverTimeOffsetSeconds.set(serverTime - local);
+            lastServerTimeSync = now;
+        }
+        return now.getEpochSecond() + serverTimeOffsetSeconds.get();
+    }
+
+    private JsonNode getJsonNode(String path, Map<String, String> query, Map<String, String> headers) {
+        return getJson(path, query, headers, JsonNode.class);
+    }
+
+    private <T> T getJson(String path, Map<String, String> query, Map<String, String> headers, Class<T> type) {
+        HttpRequest.Builder builder = baseRequest(path, query)
+                .GET()
+                .timeout(HTTP_TIMEOUT);
+        applyHeaders(builder, headers);
+        HttpRequest request = builder.build();
+        return sendJson(request, type);
+    }
+
+    private JsonNode postJsonNode(String path, Map<String, String> query, Map<String, String> headers, String body) {
+        return postJson(path, query, headers, body, JsonNode.class);
+    }
+
+    private <T> T postJson(String path, Map<String, String> query, Map<String, String> headers, String body, Class<T> type) {
+        HttpRequest.Builder builder = baseRequest(path, query)
+                .POST(HttpRequest.BodyPublishers.ofString(body == null ? "" : body))
+                .timeout(HTTP_TIMEOUT)
+                .header("Content-Type", "application/json");
+        applyHeaders(builder, headers);
+        HttpRequest request = builder.build();
+        return sendJson(request, type);
+    }
+
+    private JsonNode deleteJsonNode(String path, Map<String, String> headers, String body) {
+        HttpRequest.Builder builder = baseRequest(path, Map.of())
+                .method("DELETE", HttpRequest.BodyPublishers.ofString(body == null ? "" : body))
+                .timeout(HTTP_TIMEOUT)
+                .header("Content-Type", "application/json");
+        applyHeaders(builder, headers);
+        HttpRequest request = builder.build();
+        return sendJson(request, JsonNode.class);
+    }
+
+    private String getString(String path, Map<String, String> query, Map<String, String> headers) {
+        HttpRequest.Builder builder = baseRequest(path, query)
+                .GET()
+                .timeout(HTTP_TIMEOUT);
+        applyHeaders(builder, headers);
+        HttpRequest request = builder.build();
+        return sendString(request);
+    }
+
+    private HttpRequest.Builder baseRequest(String path, Map<String, String> query) {
+        return HttpRequest.newBuilder(buildUri(path, query));
+    }
+
+    private URI buildUri(String path, Map<String, String> query) {
+        StringBuilder sb = new StringBuilder(baseUri.toString());
+        if (sb.charAt(sb.length() - 1) == '/' && path.startsWith("/")) {
+            sb.setLength(sb.length() - 1);
+        }
+        sb.append(path);
+
+        if (!query.isEmpty()) {
+            sb.append("?");
+            sb.append(query.entrySet().stream()
+                    .map(e -> encode(e.getKey()) + "=" + encode(e.getValue()))
+                    .reduce((a, b) -> a + "&" + b)
+                    .orElse(""));
+        }
+        return URI.create(sb.toString());
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static String[] flattenHeaders(Map<String, String> headers) {
+        if (headers == null || headers.isEmpty()) {
+            return new String[0];
+        }
+        String[] flat = new String[headers.size() * 2];
+        int i = 0;
+        for (Map.Entry<String, String> e : headers.entrySet()) {
+            flat[i++] = e.getKey();
+            flat[i++] = e.getValue();
+        }
+        return flat;
+    }
+
+    private static void applyHeaders(HttpRequest.Builder builder, Map<String, String> headers) {
+        String[] flat = flattenHeaders(headers);
+        if (flat.length == 0) {
+            return;
+        }
+        builder.headers(flat);
+    }
+
+    private <T> T sendJson(HttpRequest request, Class<T> type) {
+        String body = sendString(request);
+        try {
+            return objectMapper.readValue(body, type);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to decode JSON response from " + request.uri(), e);
+        }
+    }
+
+    private String sendString(HttpRequest request) {
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return response.body();
+            }
+            throw new RuntimeException(
+                    "HTTP " + response.statusCode() + " from " + request.method() + " " + request.uri()
+                            + ": " + truncate(response.body()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("HTTP request interrupted: " + request.uri(), e);
+        } catch (IOException e) {
+            throw new RuntimeException("HTTP request failed: " + request.uri(), e);
+        }
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to encode JSON", e);
+        }
+    }
+
+    private static String truncate(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.length() <= 2000 ? s : s.substring(0, 2000) + "...";
+    }
+
+    private record ApiCredsRaw(String apiKey, String secret, String passphrase) {
+        ApiCreds toCreds() {
+            return new ApiCreds(
+                    Optional.ofNullable(apiKey).orElse(""),
+                    Optional.ofNullable(secret).orElse(""),
+                    Optional.ofNullable(passphrase).orElse("")
+            );
+        }
+    }
+}

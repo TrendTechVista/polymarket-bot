@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: hft-service
+  threads:
+    virtual:
+      enabled: true
+server:
+  port: 8080
+  tomcat:
+    threads:
+      max: 200
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+hft:
+  mode: PAPER
+  risk:
+    kill-switch: false
+    max-order-notional-usd: 0
+    max-order-size: 0
+  strategy:
+    midpoint-maker:
+      enabled: false
+      quote-size: 5
+      spread: 0.01
+      refresh-millis: 1000
+  polymarket:
+    clob-rest-url: https://clob.polymarket.com
+    clob-ws-url: wss://ws-subscriptions-clob.polymarket.com
+    chain-id: 137
+    use-server-time: true
+    market-ws-enabled: false
+    market-asset-ids: []
+    auth:
+      private-key: ${POLYMARKET_PRIVATE_KEY:}
+      signature-type: 0
+      funder-address: ${POLYMARKET_FUNDER_ADDRESS:}
+      api-key: ${POLYMARKET_API_KEY:}
+      api-secret: ${POLYMARKET_API_SECRET:}
+      api-passphrase: ${POLYMARKET_API_PASSPHRASE:}
+      nonce: 0
+      auto-create-or-derive-api-creds: false
