@@ -113,13 +113,6 @@ This project uses it to keep a lightweight top-of-book cache; order placement is
 
 `strategy-service` contains sample engines under `com.polybot.hft.polymarket.strategy.*`.
 
-`MidpointMakerEngine` is a simple “cancel/replace around midpoint” example.
-
-Enable it only after you’ve set risk limits and are confident in the behavior:
-
-- `hft.polymarket.market-ws-enabled=true`
-- `hft.strategy.midpoint-maker.enabled=true`
-
 `HouseEdgeEngine` is a “biased market maker” example:
 
 - Computes a short moving average from the `last_trade_price` WS event

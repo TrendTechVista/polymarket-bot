@@ -221,18 +221,15 @@ public record HftProperties(
     }
   }
 
-  public record Strategy(@Valid MidpointMaker midpointMaker, @Valid HouseEdge houseEdge) {
+  public record Strategy(@Valid HouseEdge houseEdge) {
     public Strategy {
-      if (midpointMaker == null) {
-        midpointMaker = new MidpointMaker();
-      }
       if (houseEdge == null) {
         houseEdge = new HouseEdge();
       }
     }
 
     public Strategy() {
-      this(null, null);
+      this(null);
     }
   }
 
@@ -344,26 +341,4 @@ public record HftProperties(
         .toList();
   }
 
-  public record MidpointMaker(
-      boolean enabled,
-      @NotNull @PositiveOrZero BigDecimal quoteSize,
-      @NotNull @PositiveOrZero BigDecimal spread,
-      @NotNull @Min(1) Long refreshMillis
-  ) {
-    public MidpointMaker {
-      if (quoteSize == null) {
-        quoteSize = BigDecimal.valueOf(5);
-      }
-      if (spread == null) {
-        spread = BigDecimal.valueOf(0.01);
-      }
-      if (refreshMillis == null) {
-        refreshMillis = 1_000L;
-      }
-    }
-
-    public MidpointMaker() {
-      this(false, null, null, null);
-    }
-  }
 }
