@@ -12,7 +12,9 @@
     { "key": "liveAck", "value": "true" },
     { "key": "gammaQuery", "value": "" },
     { "key": "gammaMarketId", "value": "" },
-    { "key": "gammaEventId", "value": "" }
+    { "key": "gammaEventId", "value": "" },
+    { "key": "gammaAuthorization", "value": "" },
+    { "key": "gammaCookie", "value": "" }
   ],
   "item": [
     {
@@ -149,6 +151,10 @@
           "name": "Search",
           "request": {
             "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "{{gammaAuthorization}}" },
+              { "key": "Cookie", "value": "{{gammaCookie}}" }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/gamma/search?query={{gammaQuery}}",
               "host": ["{{baseUrl}}"],
@@ -163,6 +169,10 @@
           "name": "Markets",
           "request": {
             "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "{{gammaAuthorization}}" },
+              { "key": "Cookie", "value": "{{gammaCookie}}" }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/gamma/markets?limit=20",
               "host": ["{{baseUrl}}"],
@@ -177,6 +187,10 @@
           "name": "Market By Id",
           "request": {
             "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "{{gammaAuthorization}}" },
+              { "key": "Cookie", "value": "{{gammaCookie}}" }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/gamma/markets/{{gammaMarketId}}",
               "host": ["{{baseUrl}}"],
@@ -188,6 +202,10 @@
           "name": "Events",
           "request": {
             "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "{{gammaAuthorization}}" },
+              { "key": "Cookie", "value": "{{gammaCookie}}" }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/gamma/events?limit=20",
               "host": ["{{baseUrl}}"],
@@ -202,6 +220,10 @@
           "name": "Event By Id",
           "request": {
             "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "{{gammaAuthorization}}" },
+              { "key": "Cookie", "value": "{{gammaCookie}}" }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/gamma/events/{{gammaEventId}}",
               "host": ["{{baseUrl}}"],
@@ -272,4 +294,3 @@
     }
   ]
 }
-

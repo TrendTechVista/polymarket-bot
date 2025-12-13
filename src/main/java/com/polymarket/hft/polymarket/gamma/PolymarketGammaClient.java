@@ -26,34 +26,33 @@ public final class PolymarketGammaClient {
     this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
   }
 
-  public JsonNode search(Map<String, String> query) {
-    return getJsonNode(PolymarketGammaPaths.SEARCH, query);
+  public JsonNode search(Map<String, String> query, Map<String, String> headers) {
+    return getJsonNode(PolymarketGammaPaths.SEARCH, query, headers);
   }
 
-  public JsonNode markets(Map<String, String> query) {
-    return getJsonNode(PolymarketGammaPaths.MARKETS, query);
+  public JsonNode markets(Map<String, String> query, Map<String, String> headers) {
+    return getJsonNode(PolymarketGammaPaths.MARKETS, query, headers);
   }
 
-  public JsonNode marketById(String id) {
-    return getJsonNode(PolymarketGammaPaths.MARKETS + "/" + id, Map.of());
+  public JsonNode marketById(String id, Map<String, String> headers) {
+    return getJsonNode(PolymarketGammaPaths.MARKETS + "/" + id, Map.of(), headers);
   }
 
-  public JsonNode events(Map<String, String> query) {
-    return getJsonNode(PolymarketGammaPaths.EVENTS, query);
+  public JsonNode events(Map<String, String> query, Map<String, String> headers) {
+    return getJsonNode(PolymarketGammaPaths.EVENTS, query, headers);
   }
 
-  public JsonNode eventById(String id) {
-    return getJsonNode(PolymarketGammaPaths.EVENTS + "/" + id, Map.of());
+  public JsonNode eventById(String id, Map<String, String> headers) {
+    return getJsonNode(PolymarketGammaPaths.EVENTS + "/" + id, Map.of(), headers);
   }
 
-  private JsonNode getJsonNode(String path, Map<String, String> query) {
+  private JsonNode getJsonNode(String path, Map<String, String> query, Map<String, String> headers) {
     HttpRequest.Builder builder = requestFactory.request(path, query)
         .GET()
         .timeout(HTTP_TIMEOUT)
         .header("Accept", "application/json")
         .header("User-Agent", "polymarket-hft-service/1.0");
-    HttpHeadersUtil.apply(builder, Map.of());
+    HttpHeadersUtil.apply(builder, headers);
     return transport.sendJson(builder.build(), JsonNode.class);
   }
 }
-

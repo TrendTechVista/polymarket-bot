@@ -3,6 +3,7 @@ package com.polymarket.hft.polymarket.web;
 import com.polymarket.hft.config.HftProperties;
 import com.polymarket.hft.polymarket.auth.PolymarketAuthContext;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/polymarket/auth")
 @RequiredArgsConstructor
+@Slf4j
 public class PolymarketAuthController {
 
   private final PolymarketAuthContext authContext;
@@ -18,6 +20,7 @@ public class PolymarketAuthController {
 
   @GetMapping("/status")
   public ResponseEntity<PolymarketAuthStatusResponse> status() {
+    log.info("api /auth/status");
     HftProperties.Auth auth = properties.polymarket().auth();
     String envPk = environment.getProperty("POLYMARKET_PRIVATE_KEY");
     String resolvedPk = environment.getProperty("hft.polymarket.auth.private-key");
@@ -48,6 +51,7 @@ public class PolymarketAuthController {
       @RequestHeader(name = LiveTradingGuardFilter.HEADER_LIVE_ACK, required = false) String liveAck,
       @RequestParam(name = "nonce", required = false) Long nonceOverride
   ) {
+    log.info("api /auth/derive nonce={} liveAck={}", nonceOverride, liveAck != null && !liveAck.isBlank());
     if (properties.mode() == HftProperties.TradingMode.LIVE && !"true".equalsIgnoreCase(liveAck)) {
       Long nonce = nonceOverride == null ? properties.polymarket().auth().nonce() : nonceOverride;
       return ResponseEntity.status(428).body(new PolymarketDeriveCredsResponse(
