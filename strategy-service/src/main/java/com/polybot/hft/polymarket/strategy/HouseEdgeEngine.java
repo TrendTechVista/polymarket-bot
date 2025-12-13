@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -45,6 +46,8 @@ public class HouseEdgeEngine {
     return t;
   });
 
+  private final AtomicReference<List<HftProperties.HouseEdgeMarket>> activeMarkets = new AtomicReference<>(List.of());
+
   private final Map<String, TradeWindow> tradeWindowsByTokenId = new ConcurrentHashMap<>();
   private final Map<String, MarketMeta> metaByTokenId = new ConcurrentHashMap<>();
   private final Map<String, MarketState> stateByMarketKey = new ConcurrentHashMap<>();
@@ -59,25 +62,18 @@ public class HouseEdgeEngine {
       log.warn("house-edge enabled, but market WS disabled (hft.polymarket.market-ws-enabled=false).");
       return;
     }
-    if (cfg.markets().isEmpty()) {
-      log.warn("house-edge enabled, but no markets configured (hft.strategy.house-edge.markets).");
+    if (cfg.markets().isEmpty() && (cfg.discovery() == null || !cfg.discovery().enabled())) {
+      log.warn("house-edge enabled, but no markets configured (hft.strategy.house-edge.markets) and discovery is disabled.");
       return;
+    }
+    if (cfg.markets().isEmpty()) {
+      log.info("house-edge enabled with discovery; waiting for discovered markets...");
     }
     if (cfg.loserInventoryLimit().compareTo(BigDecimal.ZERO) > 0) {
       log.warn("house-edge loser-inventory-limit is configured but inventory tracking is not implemented yet; the kill switch is not enforced.");
     }
 
-    Set<String> subscribed = new HashSet<>(properties.polymarket().marketAssetIds());
-    for (HftProperties.HouseEdgeMarket m : cfg.markets()) {
-      if (m.yesTokenId() == null || m.yesTokenId().isBlank() || m.noTokenId() == null || m.noTokenId().isBlank()) {
-        log.warn("house-edge market entry missing yes/no token ids: {}", m);
-        continue;
-      }
-      if (!subscribed.contains(m.yesTokenId()) || !subscribed.contains(m.noTokenId())) {
-        log.warn("house-edge market token ids must be in hft.polymarket.market-asset-ids (yes={}, no={})",
-            suffix(m.yesTokenId()), suffix(m.noTokenId()));
-      }
-    }
+    setMarkets(cfg.markets());
 
     long periodMs = Math.max(50, cfg.refreshMillis());
     executor.scheduleAtFixedRate(() -> tick(cfg), 0, periodMs, TimeUnit.MILLISECONDS);
@@ -90,7 +86,7 @@ public class HouseEdgeEngine {
   }
 
   private void tick(HftProperties.HouseEdge cfg) {
-    for (HftProperties.HouseEdgeMarket market : cfg.markets()) {
+    for (HftProperties.HouseEdgeMarket market : activeMarkets.get()) {
       try {
         tickMarket(cfg, market);
       } catch (Exception e) {
@@ -132,7 +128,7 @@ public class HouseEdgeEngine {
     if (prev == null || prev.bias != bias) {
       stateByMarketKey.put(marketKey, new MarketState(bias));
       log.info("house-edge bias change market={} bias={} currentYes={} fairYes={}",
-          marketKey,
+          marketLabel(market),
           bias.name(),
           currentYes,
           fair);
@@ -317,8 +313,14 @@ public class HouseEdgeEngine {
   }
 
   private static String marketKey(HftProperties.HouseEdgeMarket m) {
+    String yes = safe(m.yesTokenId());
+    String no = safe(m.noTokenId());
+    return yes + ":" + no;
+  }
+
+  private static String marketLabel(HftProperties.HouseEdgeMarket m) {
     if (m.name() != null && !m.name().isBlank()) {
-      return m.name();
+      return m.name().trim();
     }
     return suffix(m.yesTokenId()) + ":" + suffix(m.noTokenId());
   }
@@ -419,5 +421,64 @@ public class HouseEdgeEngine {
 
     private record Trade(BigDecimal price, Instant at) {
     }
+  }
+
+  public void setMarkets(List<HftProperties.HouseEdgeMarket> markets) {
+    List<HftProperties.HouseEdgeMarket> sanitized = sanitizeMarkets(markets);
+    Map<String, HftProperties.HouseEdgeMarket> nextByKey = new HashMap<>();
+    for (HftProperties.HouseEdgeMarket m : sanitized) {
+      nextByKey.put(marketKey(m), m);
+    }
+
+    List<HftProperties.HouseEdgeMarket> prev = activeMarkets.getAndSet(List.copyOf(nextByKey.values()));
+    Set<String> prevKeys = new HashSet<>();
+    for (HftProperties.HouseEdgeMarket m : prev) {
+      prevKeys.add(marketKey(m));
+    }
+    Set<String> nextKeys = nextByKey.keySet();
+
+    Set<String> removed = new HashSet<>(prevKeys);
+    removed.removeAll(nextKeys);
+    for (String key : removed) {
+      MarketState state = stateByMarketKey.remove(key);
+      if (state != null) {
+        safeCancel(state.buyOrderId);
+        safeCancel(state.sellOrderId);
+      }
+    }
+
+    Set<String> tokenIds = new HashSet<>();
+    for (HftProperties.HouseEdgeMarket m : nextByKey.values()) {
+      tokenIds.add(safe(m.yesTokenId()));
+      tokenIds.add(safe(m.noTokenId()));
+    }
+    tokenIds.removeIf(String::isBlank);
+    if (!tokenIds.isEmpty()) {
+      marketWs.subscribeAssets(tokenIds.stream().toList());
+    }
+
+    if (!removed.isEmpty() || prev.size() != nextByKey.size()) {
+      log.info("house-edge markets updated (markets={})", nextByKey.size());
+    }
+  }
+
+  private static List<HftProperties.HouseEdgeMarket> sanitizeMarkets(List<HftProperties.HouseEdgeMarket> markets) {
+    if (markets == null || markets.isEmpty()) {
+      return List.of();
+    }
+    List<HftProperties.HouseEdgeMarket> out = new ArrayList<>();
+    for (HftProperties.HouseEdgeMarket m : markets) {
+      if (m == null) {
+        continue;
+      }
+      String yes = safe(m.yesTokenId());
+      String no = safe(m.noTokenId());
+      if (yes.isBlank() || no.isBlank()) {
+        continue;
+      }
+      String name = m.name() == null ? null : m.name().trim();
+      out.add(new HftProperties.HouseEdgeMarket(name, yes, no));
+    }
+    return out;
   }
 }

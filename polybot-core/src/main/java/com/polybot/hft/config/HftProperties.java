@@ -9,6 +9,7 @@ import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Objects;
 
 @Validated
 @ConfigurationProperties(prefix = "hft")
@@ -96,8 +97,8 @@ public record HftProperties(
       if (userWsEnabled == null) {
         userWsEnabled = false;
       }
-      marketAssetIds = marketAssetIds == null ? List.of() : List.copyOf(marketAssetIds);
-      userMarketIds = userMarketIds == null ? List.of() : List.copyOf(userMarketIds);
+      marketAssetIds = sanitizeStringList(marketAssetIds);
+      userMarketIds = sanitizeStringList(userMarketIds);
       if (rest == null) {
         rest = new Rest();
       }
@@ -244,6 +245,7 @@ public record HftProperties(
       @NotNull @PositiveOrZero Integer passiveAwayTicks,
       @NotNull @PositiveOrZero BigDecimal quoteSize,
       @NotNull @PositiveOrZero BigDecimal loserInventoryLimit,
+      @Valid HouseEdgeDiscovery discovery,
       @Valid List<HouseEdgeMarket> markets
   ) {
     public HouseEdge {
@@ -268,11 +270,43 @@ public record HftProperties(
       if (loserInventoryLimit == null) {
         loserInventoryLimit = BigDecimal.ZERO;
       }
-      markets = markets == null ? List.of() : List.copyOf(markets);
+      if (discovery == null) {
+        discovery = new HouseEdgeDiscovery();
+      }
+      markets = sanitizeHouseEdgeMarkets(markets);
     }
 
     public HouseEdge() {
-      this(false, null, null, null, null, null, null, null, null);
+      this(false, null, null, null, null, null, null, null, null, null);
+    }
+  }
+
+  public record HouseEdgeDiscovery(
+      boolean enabled,
+      @NotNull List<String> queries,
+      @NotNull Boolean require15m,
+      @NotNull @Min(1) Integer maxMarkets,
+      @NotNull @PositiveOrZero BigDecimal minVolume,
+      @NotNull @Min(5) Long refreshSeconds
+  ) {
+    public HouseEdgeDiscovery {
+      queries = sanitizeStringList(queries);
+      if (require15m == null) {
+        require15m = true;
+      }
+      if (maxMarkets == null) {
+        maxMarkets = 3;
+      }
+      if (minVolume == null) {
+        minVolume = BigDecimal.ZERO;
+      }
+      if (refreshSeconds == null) {
+        refreshSeconds = 30L;
+      }
+    }
+
+    public HouseEdgeDiscovery() {
+      this(false, List.of("Bitcoin", "Ethereum"), null, null, null, null);
     }
   }
 
@@ -281,6 +315,33 @@ public record HftProperties(
       String yesTokenId,
       String noTokenId
   ) {
+  }
+
+  private static List<String> sanitizeStringList(List<String> values) {
+    if (values == null || values.isEmpty()) {
+      return List.of();
+    }
+    return values.stream()
+        .filter(Objects::nonNull)
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .toList();
+  }
+
+  private static List<HouseEdgeMarket> sanitizeHouseEdgeMarkets(List<HouseEdgeMarket> markets) {
+    if (markets == null || markets.isEmpty()) {
+      return List.of();
+    }
+    return markets.stream()
+        .filter(Objects::nonNull)
+        .map(m -> new HouseEdgeMarket(
+            m.name() == null ? null : m.name().trim(),
+            m.yesTokenId() == null ? null : m.yesTokenId().trim(),
+            m.noTokenId() == null ? null : m.noTokenId().trim()
+        ))
+        .filter(m -> m.yesTokenId() != null && !m.yesTokenId().isBlank())
+        .filter(m -> m.noTokenId() != null && !m.noTokenId().isBlank())
+        .toList();
   }
 
   public record MidpointMaker(

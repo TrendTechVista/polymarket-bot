@@ -1,13 +1,13 @@
-spring:
-  application:
-    name: strategy-service
-
-server:
-  port: 8081
-
 hft:
-  mode: PAPER
+  mode: LIVE
   executor:
-    base-url: http://localhost:8080
-    send-live-ack: true
+    base-url: ${POLYBOT_EXECUTOR_BASE_URL:http://localhost:8080}
+  polymarket:
+    market-ws-enabled: true
+  strategy:
+    house-edge:
+      enabled: true
+      discovery:
+        enabled: true
+        queries: [ Bitcoin, Ethereum, Solana ]
 

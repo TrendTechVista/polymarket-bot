@@ -30,6 +30,10 @@ public final class PolymarketGammaClient {
     return getJsonNode(PolymarketGammaPaths.SEARCH, query, headers);
   }
 
+  public JsonNode publicSearch(Map<String, String> query, Map<String, String> headers) {
+    return getJsonNode(PolymarketGammaPaths.PUBLIC_SEARCH, query, headers);
+  }
+
   public JsonNode markets(Map<String, String> query, Map<String, String> headers) {
     return getJsonNode(PolymarketGammaPaths.MARKETS, query, headers);
   }

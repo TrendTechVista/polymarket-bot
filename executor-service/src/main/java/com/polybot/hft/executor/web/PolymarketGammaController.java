@@ -29,13 +29,18 @@ public class PolymarketGammaController {
     String q = query.getOrDefault("query", query.get("q"));
     if (q == null || q.isBlank()) {
       return ResponseEntity.badRequest().body(objectMapper.createObjectNode()
-          .put("error", "Missing required query parameter: query"));
+          .put("error", "Missing required query parameter: q"));
     }
     log.info("api /gamma/search query='{}'", q);
     Map<String, String> gammaQuery = new HashMap<>(query);
     gammaQuery.remove("query");
     gammaQuery.put("q", q);
-    return ResponseEntity.ok(gammaClient.search(gammaQuery, gammaHeaders(authorization, cookie)));
+
+    Map<String, String> headers = gammaHeaders(authorization, cookie);
+    if (headers.isEmpty()) {
+      return ResponseEntity.ok(gammaClient.publicSearch(gammaQuery, Map.of()));
+    }
+    return ResponseEntity.ok(gammaClient.search(gammaQuery, headers));
   }
 
   @GetMapping("/markets")

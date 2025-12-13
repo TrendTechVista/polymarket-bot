@@ -37,6 +37,7 @@ Configs:
 
 - `executor-service/src/main/resources/application.yaml`
 - `strategy-service/src/main/resources/application.yaml`
+- Shared defaults: `polybot-core/src/main/resources/polybot-common.yaml` (imported via `spring.config.import`)
 
 Recommended env vars (for `executor-service`):
 
@@ -57,6 +58,8 @@ Key settings (all under `hft.*`):
 - `hft.polymarket.market-ws-enabled`: enable CLOB market WS cache
 - `hft.polymarket.market-asset-ids`: list of token IDs to subscribe to (market channel)
 - `hft.executor.base-url`: where `strategy-service` sends orders (default `http://localhost:8080`)
+
+Most properties are omitted from YAML because they have sane defaults in `polybot-core/src/main/java/com/polybot/hft/config/HftProperties.java`. Override any property via env var (e.g. `HFT_POLYMARKET_CLOB_REST_URL`) or `--hft....` command line flags.
 
 ## API
 
@@ -80,7 +83,7 @@ Gamma (market/search metadata):
 - `GET /api/polymarket/gamma/events`
 - `GET /api/polymarket/gamma/events/{id}`
 
-If Gamma returns `401 invalid token/cookies`, pass your `Authorization` and/or `Cookie` headers through to the service (the Postman env has `gammaAuthorization` and `gammaCookie` variables for this).
+`/gamma/search` uses Gamma's public search when you don't pass `Authorization`/`Cookie` headers. If you do pass them, the request is forwarded to the authenticated `/search` endpoint.
 
 Example (paper mode):
 
@@ -122,12 +125,12 @@ Enable it only after you’ve set risk limits and are confident in the behavior:
 - Computes a short moving average from the `last_trade_price` WS event
 - Chooses a YES/NO bias and skews quotes to accumulate the “winner”
 
-Config (requires market WS + both token IDs subscribed):
+Config:
 
-- `hft.polymarket.market-asset-ids` must include both `yesTokenId` and `noTokenId`
+- `hft.polymarket.market-ws-enabled=true`
 - `hft.strategy.house-edge.enabled=true`
-- `hft.strategy.house-edge.markets[0].yes-token-id=...`
-- `hft.strategy.house-edge.markets[0].no-token-id=...`
+- Manual mode: set `hft.strategy.house-edge.markets[*].yes-token-id/no-token-id`
+- Discovery mode: set `hft.strategy.house-edge.discovery.enabled=true` (markets are selected automatically and WS subscriptions are updated dynamically)
 
 ## Safety
 

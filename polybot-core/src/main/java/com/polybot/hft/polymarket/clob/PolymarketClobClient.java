@@ -81,6 +81,14 @@ public final class PolymarketClobClient {
     return node.get("base_fee").intValue();
   }
 
+  public JsonNode markets(Map<String, String> query) {
+    return getJsonNode(PolymarketClobPaths.MARKETS, query == null ? Map.of() : query, Map.of());
+  }
+
+  public JsonNode samplingMarkets(Map<String, String> query) {
+    return getJsonNode(PolymarketClobPaths.SAMPLING_MARKETS, query == null ? Map.of() : query, Map.of());
+  }
+
   public ApiCreds createApiCreds(Credentials signingCredentials, long nonce) {
     return l1Auth(signingCredentials, HttpMethod.POST, PolymarketClobPaths.AUTH_API_KEY, null, nonce, ApiCredsRaw.class)
         .toCreds();

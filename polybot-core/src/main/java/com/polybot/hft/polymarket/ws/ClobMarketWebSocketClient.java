@@ -20,7 +20,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 @Component
 @Slf4j
@@ -33,6 +35,7 @@ public class ClobMarketWebSocketClient {
   private final @NonNull Clock clock;
 
   private final Map<String, TopOfBook> topOfBookByAssetId = new ConcurrentHashMap<>();
+  private final Set<String> subscribedAssetIds = ConcurrentHashMap.newKeySet();
   private final ScheduledExecutorService pingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
     Thread t = new Thread(r, "clob-ws-ping");
     t.setDaemon(true);
@@ -87,14 +90,35 @@ public class ClobMarketWebSocketClient {
       return;
     }
     List<String> assets = polymarket.marketAssetIds();
-    if (assets == null || assets.isEmpty()) {
-      log.warn("Market WS enabled, but no asset IDs configured (hft.polymarket.market-asset-ids).");
+    if (assets != null && !assets.isEmpty()) {
+      subscribeAssets(assets);
       return;
     }
-    connect(assets);
+    log.info("Market WS enabled; waiting for market asset subscriptions.");
   }
 
-  private void connect(List<String> assetIds) {
+  public void subscribeAssets(List<String> assetIds) {
+    if (!properties.polymarket().marketWsEnabled()) {
+      return;
+    }
+    List<String> sanitized = sanitize(assetIds);
+    if (sanitized.isEmpty()) {
+      return;
+    }
+
+    synchronized (this) {
+      boolean changed = subscribedAssetIds.addAll(sanitized);
+      if (!started) {
+        connectLocked();
+        changed = true;
+      }
+      if (changed) {
+        sendSubscribeLocked();
+      }
+    }
+  }
+
+  private void connectLocked() {
     if (started) {
       return;
     }
@@ -104,7 +128,7 @@ public class ClobMarketWebSocketClient {
     log.info("Connecting to CLOB market websocket: {}", wsUri);
 
     CompletableFuture<WebSocket> cf = httpClient.newWebSocketBuilder()
-        .buildAsync(wsUri, new Listener(assetIds));
+        .buildAsync(wsUri, new Listener());
     this.webSocket = cf.join();
 
     pingExecutor.scheduleAtFixedRate(() -> {
@@ -136,6 +160,19 @@ public class ClobMarketWebSocketClient {
     } catch (Exception e) {
       throw new IllegalStateException("Failed to build market ws subscribe message", e);
     }
+  }
+
+  private void sendSubscribeLocked() {
+    WebSocket ws = this.webSocket;
+    if (ws == null) {
+      return;
+    }
+    List<String> snapshot = subscribedAssetIds.stream().sorted().toList();
+    if (snapshot.isEmpty()) {
+      return;
+    }
+    ws.sendText(buildSubscribeMessage(snapshot), true);
+    log.info("Subscribed to {} market assets via WS", snapshot.size());
   }
 
   private void handleMessage(String message) {
@@ -216,18 +253,29 @@ public class ClobMarketWebSocketClient {
     ));
   }
 
+  private static List<String> sanitize(List<String> assetIds) {
+    if (assetIds == null || assetIds.isEmpty()) {
+      return List.of();
+    }
+    return assetIds.stream()
+        .filter(s -> s != null && !s.isBlank())
+        .map(String::trim)
+        .distinct()
+        .collect(Collectors.toList());
+  }
+
   private final class Listener implements WebSocket.Listener {
     private final StringBuilder buf = new StringBuilder(8192);
-    private final List<String> assetIds;
 
-    private Listener(List<String> assetIds) {
-      this.assetIds = assetIds;
+    private Listener() {
     }
 
     @Override
     public void onOpen(WebSocket webSocket) {
-      String subscribe = buildSubscribeMessage(assetIds);
-      webSocket.sendText(subscribe, true);
+      synchronized (ClobMarketWebSocketClient.this) {
+        ClobMarketWebSocketClient.this.webSocket = webSocket;
+        sendSubscribeLocked();
+      }
       webSocket.request(1);
     }
 
@@ -246,6 +294,9 @@ public class ClobMarketWebSocketClient {
     @Override
     public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
       log.warn("CLOB market websocket closed (status={}, reason={})", statusCode, reason);
+      synchronized (ClobMarketWebSocketClient.this) {
+        ClobMarketWebSocketClient.this.webSocket = null;
+      }
       started = false;
       return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
     }
@@ -253,6 +304,9 @@ public class ClobMarketWebSocketClient {
     @Override
     public void onError(WebSocket webSocket, Throwable error) {
       log.warn("CLOB market websocket error: {}", error.toString());
+      synchronized (ClobMarketWebSocketClient.this) {
+        ClobMarketWebSocketClient.this.webSocket = null;
+      }
       started = false;
     }
   }
