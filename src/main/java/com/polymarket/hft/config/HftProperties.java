@@ -42,6 +42,7 @@ public record HftProperties(
   public record Polymarket(
       String clobRestUrl,
       String clobWsUrl,
+      String gammaUrl,
       @Min(1) Integer chainId,
       Boolean useServerTime,
       Boolean marketWsEnabled,
@@ -57,6 +58,9 @@ public record HftProperties(
       }
       if (clobWsUrl == null || clobWsUrl.isBlank()) {
         clobWsUrl = "wss://ws-subscriptions-clob.polymarket.com";
+      }
+      if (gammaUrl == null || gammaUrl.isBlank()) {
+        gammaUrl = "https://gamma-api.polymarket.com";
       }
       if (chainId == null) {
         chainId = 137;
@@ -81,7 +85,7 @@ public record HftProperties(
     }
 
     public Polymarket() {
-      this(null, null, null, null, null, null, null, null, null, null);
+      this(null, null, null, null, null, null, null, null, null, null, null);
     }
   }
 
@@ -229,4 +233,3 @@ public record HftProperties(
     }
   }
 }
-

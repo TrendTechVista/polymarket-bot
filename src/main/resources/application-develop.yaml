@@ -30,6 +30,7 @@ hft:
   polymarket:
     clob-rest-url: https://clob.polymarket.com
     clob-ws-url: wss://ws-subscriptions-clob.polymarket.com
+    gamma-url: https://gamma-api.polymarket.com
     chain-id: 137
     use-server-time: true
     market-ws-enabled: false

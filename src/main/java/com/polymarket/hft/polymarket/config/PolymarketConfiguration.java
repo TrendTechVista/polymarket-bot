@@ -3,6 +3,7 @@ package com.polymarket.hft.polymarket.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.polymarket.hft.config.HftProperties;
 import com.polymarket.hft.polymarket.clob.PolymarketClobClient;
+import com.polymarket.hft.polymarket.gamma.PolymarketGammaClient;
 import com.polymarket.hft.polymarket.http.PolymarketHttpTransport;
 import com.polymarket.hft.polymarket.http.RequestRateLimiter;
 import com.polymarket.hft.polymarket.http.RetryPolicy;
@@ -60,6 +61,15 @@ public class PolymarketConfiguration {
         polymarket.chainId(),
         polymarket.useServerTime()
     );
+  }
+
+  @Bean
+  public PolymarketGammaClient polymarketGammaClient(
+      HftProperties properties,
+      PolymarketHttpTransport transport,
+      ObjectMapper objectMapper
+  ) {
+    return new PolymarketGammaClient(URI.create(properties.polymarket().gammaUrl()), transport, objectMapper);
   }
 
   private static RequestRateLimiter buildRateLimiter(HftProperties.RateLimit cfg, Clock clock) {
