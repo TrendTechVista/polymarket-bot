@@ -21,6 +21,9 @@ public class PolymarketMarketDiscoveryService {
   private static final int DEFAULT_CLOB_MAX_PAGES = 5;
   private static final String DEFAULT_UP_OR_DOWN_QUERY = "up or down";
   private static final String TAG_15M = "15M";
+  private static final String TIMEFRAME_15M_QUERY = "15m";
+  private static final int DEFAULT_GAMMA_PUBLIC_SEARCH_MAX_PAGES = 12;
+  private static final int DEFAULT_GAMMA_PUBLIC_SEARCH_MAX_LIVE_MARKETS_PER_ASSET = 10;
 
   private final PolymarketGammaClient gammaClient;
   private final PolymarketClobClient clobClient;
@@ -87,31 +90,26 @@ public class PolymarketMarketDiscoveryService {
   }
 
   public List<DiscoveredMarket> searchGammaUpOrDown15mEndingSoon() {
-    List<DiscoveredMarket> markets = new ArrayList<>();
-    try {
-      Map<String, String> gammaQuery = new LinkedHashMap<>();
-      gammaQuery.put("q", DEFAULT_UP_OR_DOWN_QUERY);
-      gammaQuery.put("tag", TAG_15M);
-      gammaQuery.put("_sort", "ending_soon");
+    return searchGammaUpOrDown15mEndingSoon(List.of());
+  }
 
-      JsonNode root = gammaClient.publicSearch(gammaQuery, Map.of());
-      markets.addAll(parseMarkets("gamma-up-or-down-15m", root));
-    } catch (Exception e) {
-      log.debug("gamma up-or-down 15m public-search failed: {}", e.toString());
+  public List<DiscoveredMarket> searchGammaUpOrDown15mEndingSoon(List<String> assetQueries) {
+    List<String> assets = assetQueries == null ? List.of() : assetQueries.stream()
+        .filter(Objects::nonNull)
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .toList();
+
+    if (assets.isEmpty()) {
+      return searchGammaPublicSearchUpOrDown15m(DEFAULT_UP_OR_DOWN_QUERY + " " + TIMEFRAME_15M_QUERY, DEFAULT_GAMMA_PUBLIC_SEARCH_MAX_PAGES, Integer.MAX_VALUE);
     }
 
-    if (!markets.isEmpty()) {
-      return markets;
+    List<DiscoveredMarket> out = new ArrayList<>();
+    for (String asset : assets) {
+      String query = asset + " " + DEFAULT_UP_OR_DOWN_QUERY + " " + TIMEFRAME_15M_QUERY;
+      out.addAll(searchGammaPublicSearchUpOrDown15m(query, DEFAULT_GAMMA_PUBLIC_SEARCH_MAX_PAGES, DEFAULT_GAMMA_PUBLIC_SEARCH_MAX_LIVE_MARKETS_PER_ASSET));
     }
-
-    try {
-      JsonNode root = gammaClient.events(Map.of("search", DEFAULT_UP_OR_DOWN_QUERY), Map.of());
-      markets.addAll(parseMarkets("gamma-up-or-down-15m-events", root));
-    } catch (Exception e) {
-      log.debug("gamma up-or-down 15m events search failed: {}", e.toString());
-    }
-
-    return markets;
+    return out;
   }
 
   public List<DiscoveredMarket> scanClobByQuestionContains(String needle) {
@@ -201,5 +199,111 @@ public class PolymarketMarketDiscoveryService {
       out.add(new DiscoveredMarket(source, PolymarketMarketParser.id(m), PolymarketMarketParser.slug(m), question, tokens.get().yesTokenId(), tokens.get().noTokenId(), volume, PolymarketMarketParser.endEpochMillis(m)));
     }
     return out;
+  }
+
+  private List<DiscoveredMarket> searchGammaPublicSearchUpOrDown15m(String query, int maxPages, int maxLiveMarkets) {
+    if (query == null || query.isBlank()) {
+      return List.of();
+    }
+    int pages = Math.max(1, maxPages);
+    int maxLive = Math.max(1, maxLiveMarkets);
+
+    List<DiscoveredMarket> out = new ArrayList<>();
+    for (int page = 1; page <= pages; page++) {
+      JsonNode root;
+      try {
+        Map<String, String> gammaQuery = new LinkedHashMap<>();
+        gammaQuery.put("q", query.trim());
+        gammaQuery.put("page", String.valueOf(page));
+        root = gammaClient.publicSearch(gammaQuery, Map.of());
+      } catch (Exception e) {
+        log.debug("gamma up-or-down 15m public-search failed page={}: {}", page, e.toString());
+        break;
+      }
+
+      out.addAll(parseGammaPublicSearchTaggedEventMarkets("gamma-up-or-down-15m", root));
+      if (out.size() >= maxLive) {
+        break;
+      }
+      if (!gammaPublicSearchHasMore(root)) {
+        break;
+      }
+    }
+    return out;
+  }
+
+  private boolean gammaPublicSearchHasMore(JsonNode root) {
+    if (root == null || root.isNull()) {
+      return false;
+    }
+    JsonNode pagination = root.get("pagination");
+    if (pagination == null || pagination.isNull()) {
+      return false;
+    }
+    JsonNode hasMore = pagination.get("hasMore");
+    return hasMore != null && hasMore.asBoolean(false);
+  }
+
+  private List<DiscoveredMarket> parseGammaPublicSearchTaggedEventMarkets(String source, JsonNode root) {
+    if (root == null || root.isNull()) {
+      return List.of();
+    }
+    JsonNode events = root.get("events");
+    if (events == null || !events.isArray() || events.isEmpty()) {
+      return List.of();
+    }
+
+    List<DiscoveredMarket> out = new ArrayList<>();
+    for (JsonNode event : events) {
+      if (!gammaEventHasTag(event, TAG_15M) || !gammaEventHasTag(event, DEFAULT_UP_OR_DOWN_QUERY)) {
+        continue;
+      }
+      JsonNode markets = event.get("markets");
+      if (markets == null || !markets.isArray() || markets.isEmpty()) {
+        continue;
+      }
+
+      for (JsonNode m : markets) {
+        if (!PolymarketMarketParser.isLive(m)) {
+          continue;
+        }
+        String question = PolymarketMarketParser.question(m);
+        if (question == null || question.isBlank()) {
+          continue;
+        }
+        Optional<YesNoTokens> tokens = PolymarketMarketParser.yesNoTokens(m, objectMapper);
+        if (tokens.isEmpty()) {
+          continue;
+        }
+        BigDecimal volume = PolymarketMarketParser.volume(m);
+        out.add(new DiscoveredMarket(source, PolymarketMarketParser.id(m), PolymarketMarketParser.slug(m), question, tokens.get().yesTokenId(), tokens.get().noTokenId(), volume, PolymarketMarketParser.endEpochMillis(m)));
+      }
+    }
+    return out;
+  }
+
+  private boolean gammaEventHasTag(JsonNode event, String tagNeedle) {
+    if (event == null || event.isNull() || tagNeedle == null || tagNeedle.isBlank()) {
+      return false;
+    }
+    JsonNode tags = event.get("tags");
+    if (tags == null || !tags.isArray() || tags.isEmpty()) {
+      return false;
+    }
+    String needle = tagNeedle.trim().toLowerCase(Locale.ROOT);
+    for (JsonNode t : tags) {
+      if (t == null || t.isNull()) {
+        continue;
+      }
+      String label = t.hasNonNull("label") ? t.get("label").asText("") : "";
+      String slug = t.hasNonNull("slug") ? t.get("slug").asText("") : "";
+      if (label != null && !label.isBlank() && label.trim().toLowerCase(Locale.ROOT).equals(needle)) {
+        return true;
+      }
+      if (slug != null && !slug.isBlank() && slug.trim().toLowerCase(Locale.ROOT).equals(needle)) {
+        return true;
+      }
+    }
+    return false;
   }
 }

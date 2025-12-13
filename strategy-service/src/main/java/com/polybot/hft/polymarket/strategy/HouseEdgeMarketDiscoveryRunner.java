@@ -145,7 +145,7 @@ public class HouseEdgeMarketDiscoveryRunner {
     int gammaAfterAssetFilterCount = 0;
     int clobCandidateCount = 0;
     if (require15m) {
-      List<DiscoveredMarket> upOrDown = discoveryService.searchGammaUpOrDown15mEndingSoon();
+      List<DiscoveredMarket> upOrDown = discoveryService.searchGammaUpOrDown15mEndingSoon(discovery.queries());
       gammaCandidateCount = upOrDown.size();
       List<DiscoveredMarket> gammaFiltered = filterByAssetQueries(upOrDown, discovery.queries());
       gammaAfterAssetFilterCount = gammaFiltered.size();

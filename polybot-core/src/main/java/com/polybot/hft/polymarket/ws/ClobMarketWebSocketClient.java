@@ -228,25 +228,39 @@ public class ClobMarketWebSocketClient {
     lastMessageAtMillis.set(System.currentTimeMillis());
     try {
       JsonNode node = objectMapper.readTree(message);
-      String eventType = node.path("event_type").asText("");
-      switch (eventType) {
-        case "book" -> {
-          bookMessages.incrementAndGet();
-          handleBook(node);
-        }
-        case "price_change" -> {
-          priceChangeMessages.incrementAndGet();
-          handlePriceChange(node);
-        }
-        case "last_trade_price" -> {
-          lastTradeMessages.incrementAndGet();
-          handleLastTradePrice(node);
-        }
-        default -> {
-        }
-      }
+      handleMessageNode(node);
     } catch (Exception e) {
       log.debug("Failed to parse ws message: {}", message);
+    }
+  }
+
+  private void handleMessageNode(JsonNode node) {
+    if (node == null || node.isNull()) {
+      return;
+    }
+    if (node.isArray()) {
+      for (JsonNode n : node) {
+        handleMessageNode(n);
+      }
+      return;
+    }
+
+    String eventType = node.path("event_type").asText("");
+    switch (eventType) {
+      case "book" -> {
+        bookMessages.incrementAndGet();
+        handleBook(node);
+      }
+      case "price_change" -> {
+        priceChangeMessages.incrementAndGet();
+        handlePriceChange(node);
+      }
+      case "last_trade_price" -> {
+        lastTradeMessages.incrementAndGet();
+        handleLastTradePrice(node);
+      }
+      default -> {
+      }
     }
   }
 
@@ -270,8 +284,20 @@ public class ClobMarketWebSocketClient {
 
     BigDecimal bestBid = extractBestPrice(bidsNode, true);
     BigDecimal bestAsk = extractBestPrice(asksNode, false);
+    BigDecimal lastTradePrice = parseDecimal(node.path("last_trade_price").asText(null));
 
-    topOfBookByAssetId.compute(assetId, (k, prev) -> new TopOfBook(bestBid, bestAsk, prev == null ? null : prev.lastTradePrice(), Instant.now(clock), prev == null ? null : prev.lastTradeAt()));
+    Instant now = Instant.now(clock);
+    topOfBookByAssetId.compute(assetId, (k, prev) -> {
+      BigDecimal prevLast = prev == null ? null : prev.lastTradePrice();
+      Instant prevTradeAt = prev == null ? null : prev.lastTradeAt();
+
+      BigDecimal nextLast = lastTradePrice != null ? lastTradePrice : prevLast;
+      Instant nextTradeAt = prevTradeAt;
+      if (nextLast != null && (prevLast == null || (lastTradePrice != null && prevLast != null && lastTradePrice.compareTo(prevLast) != 0))) {
+        nextTradeAt = now;
+      }
+      return new TopOfBook(bestBid, bestAsk, nextLast, now, nextTradeAt);
+    });
   }
 
   private void handlePriceChange(JsonNode node) {
@@ -310,10 +336,8 @@ public class ClobMarketWebSocketClient {
     @Override
     public void onOpen(WebSocket webSocket) {
       log.info("CLOB market websocket opened");
-      synchronized (ClobMarketWebSocketClient.this) {
-        ClobMarketWebSocketClient.this.webSocket = webSocket;
-        sendSubscribeLocked();
-      }
+      ClobMarketWebSocketClient.this.webSocket = webSocket;
+      sendSubscribeLocked();
       webSocket.request(1);
     }
 
@@ -332,9 +356,7 @@ public class ClobMarketWebSocketClient {
     @Override
     public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
       log.warn("CLOB market websocket closed (status={}, reason={})", statusCode, reason);
-      synchronized (ClobMarketWebSocketClient.this) {
-        ClobMarketWebSocketClient.this.webSocket = null;
-      }
+      ClobMarketWebSocketClient.this.webSocket = null;
       started = false;
       return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
     }
@@ -342,9 +364,7 @@ public class ClobMarketWebSocketClient {
     @Override
     public void onError(WebSocket webSocket, Throwable error) {
       log.warn("CLOB market websocket error: {}", error.toString());
-      synchronized (ClobMarketWebSocketClient.this) {
-        ClobMarketWebSocketClient.this.webSocket = null;
-      }
+      ClobMarketWebSocketClient.this.webSocket = null;
       started = false;
     }
   }
