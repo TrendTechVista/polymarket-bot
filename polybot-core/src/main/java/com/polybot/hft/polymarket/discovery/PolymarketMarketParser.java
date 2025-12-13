@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.experimental.UtilityClass;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.*;
 
 @UtilityClass
@@ -88,6 +89,34 @@ public class PolymarketMarketParser {
     for (String field : VOLUME_FIELDS) {
       JsonNode v = market.get(field);
       BigDecimal parsed = parseBigDecimal(v);
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
+  public static Long endEpochMillis(JsonNode market) {
+    if (market == null || market.isNull()) {
+      return null;
+    }
+
+    for (String field : List.of(
+        "endDate",
+        "end_date",
+        "endTime",
+        "end_time",
+        "closeDate",
+        "close_date",
+        "closingTime",
+        "closing_time",
+        "endTimestamp",
+        "end_timestamp",
+        "endTs",
+        "end_ts"
+    )) {
+      JsonNode v = market.get(field);
+      Long parsed = parseEpochMillis(v);
       if (parsed != null) {
         return parsed;
       }
@@ -350,5 +379,40 @@ public class PolymarketMarketParser {
     }
     return null;
   }
-}
 
+  private static Long parseEpochMillis(JsonNode node) {
+    if (node == null || node.isNull()) {
+      return null;
+    }
+    if (node.isNumber()) {
+      long value = node.asLong();
+      if (value <= 0) {
+        return null;
+      }
+      // Heuristic: values < 10^12 are seconds, otherwise millis.
+      return value < 1_000_000_000_000L ? value * 1000L : value;
+    }
+    if (node.isTextual()) {
+      String s = node.asText();
+      if (s == null || s.isBlank()) {
+        return null;
+      }
+      String trimmed = s.trim();
+      try {
+        return Instant.parse(trimmed).toEpochMilli();
+      } catch (Exception ignored) {
+      }
+      if (trimmed.chars().allMatch(Character::isDigit)) {
+        try {
+          long value = Long.parseLong(trimmed);
+          if (value <= 0) {
+            return null;
+          }
+          return value < 1_000_000_000_000L ? value * 1000L : value;
+        } catch (Exception ignored) {
+        }
+      }
+    }
+    return null;
+  }
+}

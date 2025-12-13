@@ -9,5 +9,4 @@ hft:
       enabled: true
       discovery:
         enabled: true
-        queries: [ Bitcoin, Ethereum, Solana ]
-
+        queries: [ Bitcoin, Ethereum, Solana, XRP ]

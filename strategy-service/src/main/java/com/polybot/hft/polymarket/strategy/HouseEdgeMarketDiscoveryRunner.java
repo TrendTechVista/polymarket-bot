@@ -77,9 +77,18 @@ public class HouseEdgeMarketDiscoveryRunner {
       return;
     }
 
+    boolean require15m = discovery.require15m() == null || discovery.require15m();
+
     List<DiscoveredMarket> candidates = new ArrayList<>();
-    for (String q : discovery.queries()) {
-      candidates.addAll(discoveryService.searchGamma(q));
+    int gammaCandidateCount = 0;
+    if (require15m) {
+      List<DiscoveredMarket> upOrDown = discoveryService.searchGammaUpOrDown15mEndingSoon();
+      gammaCandidateCount = upOrDown.size();
+      candidates.addAll(filterByAssetQueries(upOrDown, discovery.queries()));
+    } else {
+      for (String q : discovery.queries()) {
+        candidates.addAll(discoveryService.searchGamma(q));
+      }
     }
     if (candidates.isEmpty()) {
       for (String q : discovery.queries()) {
@@ -88,7 +97,6 @@ public class HouseEdgeMarketDiscoveryRunner {
     }
 
     BigDecimal minVolume = discovery.minVolume() == null ? BigDecimal.ZERO : discovery.minVolume();
-    boolean require15m = discovery.require15m() == null || discovery.require15m();
 
     Map<String, DiscoveredMarket> bestByKey = new HashMap<>();
     for (DiscoveredMarket m : candidates) {
@@ -99,7 +107,8 @@ public class HouseEdgeMarketDiscoveryRunner {
       if (question.isBlank()) {
         continue;
       }
-      if (require15m && !FIFTEEN_MIN_PATTERN.matcher(question).find()) {
+      boolean fromTagged15mSearch = m.source() != null && m.source().contains("15m");
+      if (require15m && !fromTagged15mSearch && !FIFTEEN_MIN_PATTERN.matcher(question).find()) {
         continue;
       }
       BigDecimal volume = m.volume() == null ? BigDecimal.ZERO : m.volume();
@@ -121,15 +130,35 @@ public class HouseEdgeMarketDiscoveryRunner {
 
     List<DiscoveredMarket> filtered = new ArrayList<>(bestByKey.values());
     if (filtered.isEmpty()) {
-      maybeLogNoMarkets(discovery);
+      maybeLogNoMarkets(discovery, gammaCandidateCount, candidates.size());
       return;
     }
 
-    filtered.sort((a, b) -> {
-      BigDecimal va = a.volume() == null ? BigDecimal.ZERO : a.volume();
-      BigDecimal vb = b.volume() == null ? BigDecimal.ZERO : b.volume();
-      return vb.compareTo(va);
-    });
+    if (require15m) {
+      filtered.sort((a, b) -> {
+        Long ea = a.endEpochMillis();
+        Long eb = b.endEpochMillis();
+        if (ea != null && eb != null) {
+          int cmp = ea.compareTo(eb);
+          if (cmp != 0) {
+            return cmp;
+          }
+        } else if (ea != null) {
+          return -1;
+        } else if (eb != null) {
+          return 1;
+        }
+        BigDecimal va = a.volume() == null ? BigDecimal.ZERO : a.volume();
+        BigDecimal vb = b.volume() == null ? BigDecimal.ZERO : b.volume();
+        return vb.compareTo(va);
+      });
+    } else {
+      filtered.sort((a, b) -> {
+        BigDecimal va = a.volume() == null ? BigDecimal.ZERO : a.volume();
+        BigDecimal vb = b.volume() == null ? BigDecimal.ZERO : b.volume();
+        return vb.compareTo(va);
+      });
+    }
 
     int max = Math.max(1, discovery.maxMarkets());
     List<HftProperties.HouseEdgeMarket> next = filtered.stream()
@@ -156,18 +185,64 @@ public class HouseEdgeMarketDiscoveryRunner {
     engine.setMarkets(next);
   }
 
-  private void maybeLogNoMarkets(HftProperties.HouseEdgeDiscovery discovery) {
+  private static List<DiscoveredMarket> filterByAssetQueries(List<DiscoveredMarket> markets, List<String> queries) {
+    if (markets == null || markets.isEmpty() || queries == null || queries.isEmpty()) {
+      return markets == null ? List.of() : markets;
+    }
+    Set<String> needles = new HashSet<>();
+    for (String q : queries) {
+      if (q == null || q.isBlank()) {
+        continue;
+      }
+      String norm = q.trim().toLowerCase(Locale.ROOT);
+      needles.add(norm);
+      switch (norm) {
+        case "bitcoin", "btc" -> needles.add("btc");
+        case "ethereum", "eth" -> needles.add("eth");
+        case "solana", "sol" -> needles.add("sol");
+        case "xrp", "ripple" -> {
+          needles.add("xrp");
+          needles.add("ripple");
+        }
+        default -> {
+        }
+      }
+    }
+
+    List<DiscoveredMarket> out = new ArrayList<>();
+    for (DiscoveredMarket m : markets) {
+      if (m == null) {
+        continue;
+      }
+      String question = m.question() == null ? "" : m.question().toLowerCase(Locale.ROOT);
+      String slug = m.slug() == null ? "" : m.slug().toLowerCase(Locale.ROOT);
+      for (String n : needles) {
+        if (n.isEmpty()) {
+          continue;
+        }
+        if (question.contains(n) || slug.contains(n)) {
+          out.add(m);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  private void maybeLogNoMarkets(HftProperties.HouseEdgeDiscovery discovery, int gammaCandidateCount, int candidateCountAfterAssetFilter) {
     long now = System.currentTimeMillis();
     long last = lastNoMarketsLogAtMillis;
     if (now - last < 60_000L) {
       return;
     }
     lastNoMarketsLogAtMillis = now;
-    log.info("house-edge discovery found no markets (queries={}, require15m={}, minVolume={}, maxMarkets={})",
+    log.info("house-edge discovery found no markets (queries={}, require15m={}, minVolume={}, maxMarkets={}, gammaCandidates={}, afterAssetFilter={})",
         discovery.queries(),
         discovery.require15m(),
         discovery.minVolume(),
-        discovery.maxMarkets());
+        discovery.maxMarkets(),
+        gammaCandidateCount,
+        candidateCountAfterAssetFilter);
   }
 
   private static String marketKey(String yesTokenId, String noTokenId) {

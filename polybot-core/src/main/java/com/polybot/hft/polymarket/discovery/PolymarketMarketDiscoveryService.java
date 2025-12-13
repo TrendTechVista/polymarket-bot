@@ -19,6 +19,8 @@ public class PolymarketMarketDiscoveryService {
 
   private static final int DEFAULT_CLOB_PAGE_LIMIT = 100;
   private static final int DEFAULT_CLOB_MAX_PAGES = 5;
+  private static final String DEFAULT_UP_OR_DOWN_QUERY = "up or down";
+  private static final String TAG_15M = "15M";
 
   private final PolymarketGammaClient gammaClient;
   private final PolymarketClobClient clobClient;
@@ -46,6 +48,34 @@ public class PolymarketMarketDiscoveryService {
       markets.addAll(parseMarkets("gamma-events", root));
     } catch (Exception e) {
       log.debug("gamma events search failed: {}", e.toString());
+    }
+
+    return markets;
+  }
+
+  public List<DiscoveredMarket> searchGammaUpOrDown15mEndingSoon() {
+    List<DiscoveredMarket> markets = new ArrayList<>();
+    try {
+      Map<String, String> gammaQuery = new LinkedHashMap<>();
+      gammaQuery.put("q", DEFAULT_UP_OR_DOWN_QUERY);
+      gammaQuery.put("tag", TAG_15M);
+      gammaQuery.put("_sort", "ending_soon");
+
+      JsonNode root = gammaClient.publicSearch(gammaQuery, Map.of());
+      markets.addAll(parseMarkets("gamma-up-or-down-15m", root));
+    } catch (Exception e) {
+      log.debug("gamma up-or-down 15m public-search failed: {}", e.toString());
+    }
+
+    if (!markets.isEmpty()) {
+      return markets;
+    }
+
+    try {
+      JsonNode root = gammaClient.events(Map.of("search", DEFAULT_UP_OR_DOWN_QUERY), Map.of());
+      markets.addAll(parseMarkets("gamma-up-or-down-15m-events", root));
+    } catch (Exception e) {
+      log.debug("gamma up-or-down 15m events search failed: {}", e.toString());
     }
 
     return markets;
@@ -114,7 +144,8 @@ public class PolymarketMarketDiscoveryService {
             question,
             tokens.get().yesTokenId(),
             tokens.get().noTokenId(),
-            volume
+            volume,
+            PolymarketMarketParser.endEpochMillis(m)
         ));
       }
 
@@ -152,7 +183,8 @@ public class PolymarketMarketDiscoveryService {
           question,
           tokens.get().yesTokenId(),
           tokens.get().noTokenId(),
-          volume
+          volume,
+          PolymarketMarketParser.endEpochMillis(m)
       ));
     }
     return out;
@@ -191,4 +223,3 @@ public class PolymarketMarketDiscoveryService {
     return List.of();
   }
 }
-

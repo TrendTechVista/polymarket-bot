@@ -9,7 +9,7 @@ public record DiscoveredMarket(
     String question,
     String yesTokenId,
     String noTokenId,
-    BigDecimal volume
+    BigDecimal volume,
+    Long endEpochMillis
 ) {
 }
-

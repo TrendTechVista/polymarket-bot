@@ -20,8 +20,8 @@ import jakarta.annotation.PostConstruct;
 @RequiredArgsConstructor
 public class PolymarketAuthContext {
 
-  private static final Pattern HEX_32_BYTES = Pattern.compile("0x[0-9a-fA-F]{64}");
-  private static final Pattern HEX_20_BYTES = Pattern.compile("0x[0-9a-fA-F]{40}");
+  private static final Pattern HEX_32_BYTES = Pattern.compile("(?i)0x[0-9a-f]{64}");
+  private static final Pattern HEX_20_BYTES = Pattern.compile("(?i)0x[0-9a-f]{40}");
 
   private final @NonNull HftProperties properties;
   private final @NonNull PolymarketClobClient clobClient;
@@ -29,6 +29,7 @@ public class PolymarketAuthContext {
 
   private volatile Credentials signerCredentials;
   private volatile ApiCreds apiCreds;
+  private volatile String funderAddress;
   private volatile boolean autoDeriveEnabled;
   private volatile long configuredNonce;
 
@@ -90,7 +91,12 @@ public class PolymarketAuthContext {
 
     String funder = auth.funderAddress();
     if (funder != null && !funder.isBlank()) {
-      requireHex20("hft.polymarket.auth.funder-address", funder);
+      String normalized = normalizeHex20(funder);
+      if (normalized == null) {
+        log.warn("Ignoring invalid hft.polymarket.auth.funder-address (expected 0x + 40 hex chars).");
+      } else {
+        this.funderAddress = normalized;
+      }
     }
   }
 
@@ -108,6 +114,10 @@ public class PolymarketAuthContext {
 
   public Optional<ApiCreds> apiCreds() {
     return Optional.ofNullable(apiCreds);
+  }
+
+  public Optional<String> funderAddress() {
+    return Optional.ofNullable(funderAddress);
   }
 
   public ApiCreds requireApiCreds() {
@@ -162,6 +172,23 @@ public class PolymarketAuthContext {
   private static String strip0x(String hex) {
     String trimmed = hex.trim();
     return trimmed.startsWith("0x") || trimmed.startsWith("0X") ? trimmed.substring(2) : trimmed;
+  }
+
+  private static String normalizeHex20(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    if (trimmed.isEmpty()) {
+      return null;
+    }
+    if (!trimmed.startsWith("0x") && !trimmed.startsWith("0X")) {
+      return null;
+    }
+    if (!HEX_20_BYTES.matcher(trimmed).matches()) {
+      return null;
+    }
+    return "0x" + trimmed.substring(2).toLowerCase();
   }
 
   private static String safeSuffix(String value, int len) {

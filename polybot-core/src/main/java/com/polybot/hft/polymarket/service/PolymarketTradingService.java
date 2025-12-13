@@ -174,7 +174,7 @@ public class PolymarketTradingService {
         polymarket.chainId(),
         signer,
         auth.signatureType(),
-        auth.funderAddress()
+        authContext.funderAddress().orElse(null)
     );
   }
 
