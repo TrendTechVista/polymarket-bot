@@ -3,6 +3,7 @@ package com.polymarket.hft.polymarket.web;
 import com.polymarket.hft.config.HftProperties;
 import com.polymarket.hft.polymarket.auth.PolymarketAuthContext;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.env.Environment;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,16 +14,28 @@ public class PolymarketAuthController {
 
   private final PolymarketAuthContext authContext;
   private final HftProperties properties;
+  private final Environment environment;
 
   @GetMapping("/status")
   public ResponseEntity<PolymarketAuthStatusResponse> status() {
     HftProperties.Auth auth = properties.polymarket().auth();
+    String envPk = environment.getProperty("POLYMARKET_PRIVATE_KEY");
+    String resolvedPk = environment.getProperty("hft.polymarket.auth.private-key");
+    String resolvedAuto = environment.getProperty("hft.polymarket.auth.auto-create-or-derive-api-creds");
     return ResponseEntity.ok(new PolymarketAuthStatusResponse(
+        properties.mode().name(),
+        environment.getActiveProfiles(),
         authContext.signerCredentials().isPresent(),
         authContext.signerCredentials().map(c -> c.getAddress()).orElse(null),
         authContext.apiCreds().isPresent(),
-        auth.autoCreateOrDeriveApiCreds(),
-        auth.nonce()
+        authContext.autoDeriveEnabled(),
+        authContext.configuredNonce(),
+        properties.polymarket().clobRestUrl(),
+        envPk != null && !envPk.isBlank(),
+        envPk == null ? null : envPk.trim().length(),
+        resolvedPk != null && !resolvedPk.isBlank(),
+        resolvedPk == null ? null : resolvedPk.trim().length(),
+        resolvedAuto
     ));
   }
 
@@ -36,11 +49,12 @@ public class PolymarketAuthController {
       @RequestParam(name = "nonce", required = false) Long nonceOverride
   ) {
     if (properties.mode() == HftProperties.TradingMode.LIVE && !"true".equalsIgnoreCase(liveAck)) {
+      Long nonce = nonceOverride == null ? properties.polymarket().auth().nonce() : nonceOverride;
       return ResponseEntity.status(428).body(new PolymarketDeriveCredsResponse(
           false,
           false,
           null,
-          nonceOverride == null ? properties.polymarket().auth().nonce() : nonceOverride,
+          nonce,
           "Refusing LIVE credentials derive without " + LiveTradingGuardFilter.HEADER_LIVE_ACK + ": true"
       ));
     }

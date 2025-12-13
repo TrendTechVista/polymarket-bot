@@ -19,5 +19,3 @@ hs_err_pid*
 
 # Local config / secrets
 .env
-src/main/resources/application-local.yml
-src/main/resources/application-develop.yaml
