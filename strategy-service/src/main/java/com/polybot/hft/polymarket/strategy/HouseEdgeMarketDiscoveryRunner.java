@@ -15,6 +15,8 @@ import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 @Component
@@ -34,6 +36,9 @@ public class HouseEdgeMarketDiscoveryRunner {
     return t;
   });
 
+  private final AtomicLong lastRefreshEpochMillis = new AtomicLong(0);
+  private final AtomicInteger lastSelectedMarkets = new AtomicInteger(0);
+  private volatile long lastNoMarketsLogAtMillis = 0L;
   private volatile Set<String> lastMarketKeys = Set.of();
 
   @PostConstruct
@@ -65,6 +70,7 @@ public class HouseEdgeMarketDiscoveryRunner {
   }
 
   private void refreshOnce() {
+    lastRefreshEpochMillis.set(System.currentTimeMillis());
     HftProperties.HouseEdge cfg = properties.strategy().houseEdge();
     HftProperties.HouseEdgeDiscovery discovery = cfg.discovery();
     if (!cfg.enabled() || discovery == null || !discovery.enabled()) {
@@ -115,6 +121,7 @@ public class HouseEdgeMarketDiscoveryRunner {
 
     List<DiscoveredMarket> filtered = new ArrayList<>(bestByKey.values());
     if (filtered.isEmpty()) {
+      maybeLogNoMarkets(discovery);
       return;
     }
 
@@ -145,7 +152,22 @@ public class HouseEdgeMarketDiscoveryRunner {
     lastMarketKeys = Set.copyOf(nextKeys);
 
     log.info("house-edge discovered markets selected={}", next.size());
+    lastSelectedMarkets.set(next.size());
     engine.setMarkets(next);
+  }
+
+  private void maybeLogNoMarkets(HftProperties.HouseEdgeDiscovery discovery) {
+    long now = System.currentTimeMillis();
+    long last = lastNoMarketsLogAtMillis;
+    if (now - last < 60_000L) {
+      return;
+    }
+    lastNoMarketsLogAtMillis = now;
+    log.info("house-edge discovery found no markets (queries={}, require15m={}, minVolume={}, maxMarkets={})",
+        discovery.queries(),
+        discovery.require15m(),
+        discovery.minVolume(),
+        discovery.maxMarkets());
   }
 
   private static String marketKey(String yesTokenId, String noTokenId) {
@@ -164,5 +186,12 @@ public class HouseEdgeMarketDiscoveryRunner {
     }
     return q.length() <= 120 ? q : q.substring(0, 117) + "...";
   }
-}
 
+  public long lastRefreshEpochMillis() {
+    return lastRefreshEpochMillis.get();
+  }
+
+  public int lastSelectedMarkets() {
+    return lastSelectedMarkets.get();
+  }
+}

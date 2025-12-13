@@ -55,6 +55,11 @@ public class HouseEdgeEngine {
   @PostConstruct
   void startIfEnabled() {
     HftProperties.HouseEdge cfg = properties.strategy().houseEdge();
+    log.info("house-edge config loaded (enabled={}, discoveryEnabled={}, staticMarkets={}, marketWsEnabled={})",
+        cfg.enabled(),
+        cfg.discovery() != null && cfg.discovery().enabled(),
+        cfg.markets().size(),
+        properties.polymarket().marketWsEnabled());
     if (!cfg.enabled()) {
       return;
     }
@@ -480,5 +485,9 @@ public class HouseEdgeEngine {
       out.add(new HftProperties.HouseEdgeMarket(name, yes, no));
     }
     return out;
+  }
+
+  public int activeMarketCount() {
+    return activeMarkets.get().size();
   }
 }

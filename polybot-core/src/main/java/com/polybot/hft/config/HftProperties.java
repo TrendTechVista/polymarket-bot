@@ -26,16 +26,16 @@ public record HftProperties(
       mode = TradingMode.PAPER;
     }
     if (polymarket == null) {
-      polymarket = new Polymarket();
+      polymarket = defaultPolymarket();
     }
     if (executor == null) {
-      executor = new Executor();
+      executor = defaultExecutor();
     }
     if (risk == null) {
-      risk = new Risk();
+      risk = defaultRisk();
     }
     if (strategy == null) {
-      strategy = new Strategy();
+      strategy = defaultStrategy();
     }
   }
 
@@ -55,10 +55,6 @@ public record HftProperties(
       if (sendLiveAck == null) {
         sendLiveAck = true;
       }
-    }
-
-    public Executor() {
-      this(null, null);
     }
   }
 
@@ -100,30 +96,22 @@ public record HftProperties(
       marketAssetIds = sanitizeStringList(marketAssetIds);
       userMarketIds = sanitizeStringList(userMarketIds);
       if (rest == null) {
-        rest = new Rest();
+        rest = defaultRest();
       }
       if (auth == null) {
-        auth = new Auth();
+        auth = defaultAuth();
       }
-    }
-
-    public Polymarket() {
-      this(null, null, null, null, null, null, null, null, null, null, null);
     }
   }
 
   public record Rest(@Valid RateLimit rateLimit, @Valid Retry retry) {
     public Rest {
       if (rateLimit == null) {
-        rateLimit = new RateLimit();
+        rateLimit = defaultRateLimit();
       }
       if (retry == null) {
-        retry = new Retry();
+        retry = defaultRetry();
       }
-    }
-
-    public Rest() {
-      this(null, null);
     }
   }
 
@@ -142,10 +130,6 @@ public record HftProperties(
       if (burst == null) {
         burst = 50;
       }
-    }
-
-    public RateLimit() {
-      this(null, null, null);
     }
   }
 
@@ -168,10 +152,6 @@ public record HftProperties(
       if (maxBackoffMillis == null) {
         maxBackoffMillis = 2_000L;
       }
-    }
-
-    public Retry() {
-      this(null, null, null, null);
     }
   }
 
@@ -196,10 +176,6 @@ public record HftProperties(
         autoCreateOrDeriveApiCreds = false;
       }
     }
-
-    public Auth() {
-      this(null, null, null, null, null, null, null, null);
-    }
   }
 
   public record Risk(
@@ -215,21 +191,13 @@ public record HftProperties(
         maxOrderSize = BigDecimal.ZERO;
       }
     }
-
-    public Risk() {
-      this(false, null, null);
-    }
   }
 
   public record Strategy(@Valid HouseEdge houseEdge) {
     public Strategy {
       if (houseEdge == null) {
-        houseEdge = new HouseEdge();
+        houseEdge = defaultHouseEdge();
       }
-    }
-
-    public Strategy() {
-      this(null);
     }
   }
 
@@ -268,13 +236,9 @@ public record HftProperties(
         loserInventoryLimit = BigDecimal.ZERO;
       }
       if (discovery == null) {
-        discovery = new HouseEdgeDiscovery();
+        discovery = defaultHouseEdgeDiscovery();
       }
       markets = sanitizeHouseEdgeMarkets(markets);
-    }
-
-    public HouseEdge() {
-      this(false, null, null, null, null, null, null, null, null, null);
     }
   }
 
@@ -300,10 +264,6 @@ public record HftProperties(
       if (refreshSeconds == null) {
         refreshSeconds = 30L;
       }
-    }
-
-    public HouseEdgeDiscovery() {
-      this(false, List.of("Bitcoin", "Ethereum"), null, null, null, null);
     }
   }
 
@@ -339,6 +299,46 @@ public record HftProperties(
         .filter(m -> m.yesTokenId() != null && !m.yesTokenId().isBlank())
         .filter(m -> m.noTokenId() != null && !m.noTokenId().isBlank())
         .toList();
+  }
+
+  private static Executor defaultExecutor() {
+    return new Executor(null, null);
+  }
+
+  private static Polymarket defaultPolymarket() {
+    return new Polymarket(null, null, null, null, null, null, null, null, null, null, null);
+  }
+
+  private static Rest defaultRest() {
+    return new Rest(null, null);
+  }
+
+  private static RateLimit defaultRateLimit() {
+    return new RateLimit(null, null, null);
+  }
+
+  private static Retry defaultRetry() {
+    return new Retry(null, null, null, null);
+  }
+
+  private static Auth defaultAuth() {
+    return new Auth(null, null, null, null, null, null, null, null);
+  }
+
+  private static Risk defaultRisk() {
+    return new Risk(false, null, null);
+  }
+
+  private static Strategy defaultStrategy() {
+    return new Strategy(null);
+  }
+
+  private static HouseEdge defaultHouseEdge() {
+    return new HouseEdge(false, null, null, null, null, null, null, null, null, null);
+  }
+
+  private static HouseEdgeDiscovery defaultHouseEdgeDiscovery() {
+    return new HouseEdgeDiscovery(false, List.of("Bitcoin", "Ethereum"), null, null, null, null);
   }
 
 }

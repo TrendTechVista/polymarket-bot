@@ -83,6 +83,10 @@ public class ClobMarketWebSocketClient {
     return Optional.ofNullable(topOfBookByAssetId.get(assetId));
   }
 
+  public int subscribedAssetCount() {
+    return subscribedAssetIds.size();
+  }
+
   @PostConstruct
   void startIfEnabled() {
     HftProperties.Polymarket polymarket = properties.polymarket();
