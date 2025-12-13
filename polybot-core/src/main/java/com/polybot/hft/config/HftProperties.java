@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Objects;
 
 @Validated
-@ConfigurationProperties(prefix = "hft")
+@ConfigurationProperties(prefix="hft")
 public record HftProperties(
     TradingMode mode,
     @Valid Polymarket polymarket,
@@ -37,6 +37,73 @@ public record HftProperties(
     if (strategy == null) {
       strategy = defaultStrategy();
     }
+  }
+
+  private static List<String> sanitizeStringList(List<String> values) {
+    if (values == null || values.isEmpty()) {
+      return List.of();
+    }
+    return values.stream()
+        .filter(Objects::nonNull)
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .toList();
+  }
+
+  private static List<HouseEdgeMarket> sanitizeHouseEdgeMarkets(List<HouseEdgeMarket> markets) {
+    if (markets == null || markets.isEmpty()) {
+      return List.of();
+    }
+    return markets.stream()
+        .filter(Objects::nonNull)
+        .map(m -> new HouseEdgeMarket(
+            m.name() == null ? null : m.name().trim(),
+            m.yesTokenId() == null ? null : m.yesTokenId().trim(),
+            m.noTokenId() == null ? null : m.noTokenId().trim()
+        ))
+        .filter(m -> m.yesTokenId() != null && !m.yesTokenId().isBlank())
+        .filter(m -> m.noTokenId() != null && !m.noTokenId().isBlank())
+        .toList();
+  }
+
+  private static Executor defaultExecutor() {
+    return new Executor(null, null);
+  }
+
+  private static Polymarket defaultPolymarket() {
+    return new Polymarket(null, null, null, null, null, null, null, null, null, null, null);
+  }
+
+  private static Rest defaultRest() {
+    return new Rest(null, null);
+  }
+
+  private static RateLimit defaultRateLimit() {
+    return new RateLimit(null, null, null);
+  }
+
+  private static Retry defaultRetry() {
+    return new Retry(null, null, null, null);
+  }
+
+  private static Auth defaultAuth() {
+    return new Auth(null, null, null, null, null, null, null, null);
+  }
+
+  private static Risk defaultRisk() {
+    return new Risk(false, null, null);
+  }
+
+  private static Strategy defaultStrategy() {
+    return new Strategy(null);
+  }
+
+  private static HouseEdge defaultHouseEdge() {
+    return new HouseEdge(false, null, null, null, null, null, null, null, null, null);
+  }
+
+  private static HouseEdgeDiscovery defaultHouseEdgeDiscovery() {
+    return new HouseEdgeDiscovery(false, List.of("Bitcoin", "Ethereum"), null, null, null, null);
   }
 
   public enum TradingMode {
@@ -272,73 +339,6 @@ public record HftProperties(
       String yesTokenId,
       String noTokenId
   ) {
-  }
-
-  private static List<String> sanitizeStringList(List<String> values) {
-    if (values == null || values.isEmpty()) {
-      return List.of();
-    }
-    return values.stream()
-        .filter(Objects::nonNull)
-        .map(String::trim)
-        .filter(s -> !s.isEmpty())
-        .toList();
-  }
-
-  private static List<HouseEdgeMarket> sanitizeHouseEdgeMarkets(List<HouseEdgeMarket> markets) {
-    if (markets == null || markets.isEmpty()) {
-      return List.of();
-    }
-    return markets.stream()
-        .filter(Objects::nonNull)
-        .map(m -> new HouseEdgeMarket(
-            m.name() == null ? null : m.name().trim(),
-            m.yesTokenId() == null ? null : m.yesTokenId().trim(),
-            m.noTokenId() == null ? null : m.noTokenId().trim()
-        ))
-        .filter(m -> m.yesTokenId() != null && !m.yesTokenId().isBlank())
-        .filter(m -> m.noTokenId() != null && !m.noTokenId().isBlank())
-        .toList();
-  }
-
-  private static Executor defaultExecutor() {
-    return new Executor(null, null);
-  }
-
-  private static Polymarket defaultPolymarket() {
-    return new Polymarket(null, null, null, null, null, null, null, null, null, null, null);
-  }
-
-  private static Rest defaultRest() {
-    return new Rest(null, null);
-  }
-
-  private static RateLimit defaultRateLimit() {
-    return new RateLimit(null, null, null);
-  }
-
-  private static Retry defaultRetry() {
-    return new Retry(null, null, null, null);
-  }
-
-  private static Auth defaultAuth() {
-    return new Auth(null, null, null, null, null, null, null, null);
-  }
-
-  private static Risk defaultRisk() {
-    return new Risk(false, null, null);
-  }
-
-  private static Strategy defaultStrategy() {
-    return new Strategy(null);
-  }
-
-  private static HouseEdge defaultHouseEdge() {
-    return new HouseEdge(false, null, null, null, null, null, null, null, null, null);
-  }
-
-  private static HouseEdgeDiscovery defaultHouseEdgeDiscovery() {
-    return new HouseEdgeDiscovery(false, List.of("Bitcoin", "Ethereum"), null, null, null, null);
   }
 
 }

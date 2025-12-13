@@ -51,11 +51,7 @@ public final class PolymarketGammaClient {
   }
 
   private JsonNode getJsonNode(String path, Map<String, String> query, Map<String, String> headers) {
-    HttpRequest.Builder builder = requestFactory.request(path, query)
-        .GET()
-        .timeout(HTTP_TIMEOUT)
-        .header("Accept", "application/json")
-        .header("User-Agent", "polybot/1.0");
+    HttpRequest.Builder builder = requestFactory.request(path, query).GET().timeout(HTTP_TIMEOUT).header("Accept", "application/json").header("User-Agent", "polybot/1.0");
     HttpHeadersUtil.apply(builder, headers);
     return transport.sendJson(builder.build(), JsonNode.class);
   }

@@ -5,16 +5,46 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:8080" },
-    { "key": "tokenId", "value": "" },
-    { "key": "orderId", "value": "" },
-    { "key": "nonce", "value": "0" },
-    { "key": "liveAck", "value": "true" },
-    { "key": "gammaQuery", "value": "" },
-    { "key": "gammaMarketId", "value": "" },
-    { "key": "gammaEventId", "value": "" },
-    { "key": "gammaAuthorization", "value": "" },
-    { "key": "gammaCookie", "value": "" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "tokenId",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "nonce",
+      "value": "0"
+    },
+    {
+      "key": "liveAck",
+      "value": "true"
+    },
+    {
+      "key": "gammaQuery",
+      "value": ""
+    },
+    {
+      "key": "gammaMarketId",
+      "value": ""
+    },
+    {
+      "key": "gammaEventId",
+      "value": ""
+    },
+    {
+      "key": "gammaAuthorization",
+      "value": ""
+    },
+    {
+      "key": "gammaCookie",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -26,8 +56,15 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/auth/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "auth", "status"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "auth",
+                "status"
+              ]
             }
           }
         },
@@ -36,14 +73,27 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-HFT-LIVE-ACK", "value": "{{liveAck}}" }
+              {
+                "key": "X-HFT-LIVE-ACK",
+                "value": "{{liveAck}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/auth/derive?nonce={{nonce}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "auth", "derive"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "auth",
+                "derive"
+              ],
               "query": [
-                { "key": "nonce", "value": "{{nonce}}" }
+                {
+                  "key": "nonce",
+                  "value": "{{nonce}}"
+                }
               ]
             }
           }
@@ -59,8 +109,14 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "health"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "health"
+              ]
             }
           }
         },
@@ -70,10 +126,19 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/health?deep=true",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "health"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "health"
+              ],
               "query": [
-                { "key": "deep", "value": "true" }
+                {
+                  "key": "deep",
+                  "value": "true"
+                }
               ]
             }
           }
@@ -84,11 +149,23 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/health?deep=true&tokenId={{tokenId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "health"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "health"
+              ],
               "query": [
-                { "key": "deep", "value": "true" },
-                { "key": "tokenId", "value": "{{tokenId}}" }
+                {
+                  "key": "deep",
+                  "value": "true"
+                },
+                {
+                  "key": "tokenId",
+                  "value": "{{tokenId}}"
+                }
               ]
             }
           }
@@ -104,8 +181,15 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/orderbook/{{tokenId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "orderbook", "{{tokenId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "orderbook",
+                "{{tokenId}}"
+              ]
             }
           }
         },
@@ -115,8 +199,15 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/tick-size/{{tokenId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "tick-size", "{{tokenId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "tick-size",
+                "{{tokenId}}"
+              ]
             }
           }
         },
@@ -126,8 +217,15 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/neg-risk/{{tokenId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "neg-risk", "{{tokenId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "neg-risk",
+                "{{tokenId}}"
+              ]
             }
           }
         },
@@ -137,8 +235,16 @@
             "method": "GET",
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/marketdata/top/{{tokenId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "marketdata", "top", "{{tokenId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "marketdata",
+                "top",
+                "{{tokenId}}"
+              ]
             }
           }
         }
@@ -152,15 +258,31 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "{{gammaAuthorization}}" },
-              { "key": "Cookie", "value": "{{gammaCookie}}" }
+              {
+                "key": "Authorization",
+                "value": "{{gammaAuthorization}}"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{gammaCookie}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/gamma/search?query={{gammaQuery}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "gamma", "search"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "gamma",
+                "search"
+              ],
               "query": [
-                { "key": "query", "value": "{{gammaQuery}}" }
+                {
+                  "key": "query",
+                  "value": "{{gammaQuery}}"
+                }
               ]
             }
           }
@@ -170,15 +292,31 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "{{gammaAuthorization}}" },
-              { "key": "Cookie", "value": "{{gammaCookie}}" }
+              {
+                "key": "Authorization",
+                "value": "{{gammaAuthorization}}"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{gammaCookie}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/gamma/markets?limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "gamma", "markets"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "gamma",
+                "markets"
+              ],
               "query": [
-                { "key": "limit", "value": "20" }
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
               ]
             }
           }
@@ -188,13 +326,27 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "{{gammaAuthorization}}" },
-              { "key": "Cookie", "value": "{{gammaCookie}}" }
+              {
+                "key": "Authorization",
+                "value": "{{gammaAuthorization}}"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{gammaCookie}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/gamma/markets/{{gammaMarketId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "gamma", "markets", "{{gammaMarketId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "gamma",
+                "markets",
+                "{{gammaMarketId}}"
+              ]
             }
           }
         },
@@ -203,15 +355,31 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "{{gammaAuthorization}}" },
-              { "key": "Cookie", "value": "{{gammaCookie}}" }
+              {
+                "key": "Authorization",
+                "value": "{{gammaAuthorization}}"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{gammaCookie}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/gamma/events?limit=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "gamma", "events"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "gamma",
+                "events"
+              ],
               "query": [
-                { "key": "limit", "value": "20" }
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
               ]
             }
           }
@@ -221,13 +389,27 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "{{gammaAuthorization}}" },
-              { "key": "Cookie", "value": "{{gammaCookie}}" }
+              {
+                "key": "Authorization",
+                "value": "{{gammaAuthorization}}"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{gammaCookie}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/gamma/events/{{gammaEventId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "gamma", "events", "{{gammaEventId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "gamma",
+                "events",
+                "{{gammaEventId}}"
+              ]
             }
           }
         }
@@ -241,18 +423,35 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-HFT-LIVE-ACK", "value": "{{liveAck}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-HFT-LIVE-ACK",
+                "value": "{{liveAck}}"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"tokenId\": \"{{tokenId}}\",\n  \"side\": \"BUY\",\n  \"price\": 0.45,\n  \"size\": 5,\n  \"orderType\": \"GTC\"\n}\n",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/orders/limit",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "orders", "limit"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "orders",
+                "limit"
+              ]
             }
           }
         },
@@ -261,18 +460,35 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-HFT-LIVE-ACK", "value": "{{liveAck}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-HFT-LIVE-ACK",
+                "value": "{{liveAck}}"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"tokenId\": \"{{tokenId}}\",\n  \"side\": \"BUY\",\n  \"amount\": 5,\n  \"price\": 0.5,\n  \"orderType\": \"FOK\"\n}\n",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/orders/market",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "orders", "market"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "orders",
+                "market"
+              ]
             }
           }
         },
@@ -281,12 +497,22 @@
           "request": {
             "method": "DELETE",
             "header": [
-              { "key": "X-HFT-LIVE-ACK", "value": "{{liveAck}}" }
+              {
+                "key": "X-HFT-LIVE-ACK",
+                "value": "{{liveAck}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/polymarket/orders/{{orderId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "polymarket", "orders", "{{orderId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "polymarket",
+                "orders",
+                "{{orderId}}"
+              ]
             }
           }
         }

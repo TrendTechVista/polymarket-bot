@@ -31,8 +31,8 @@ public class PolymarketController {
 
   @GetMapping("/health")
   public ResponseEntity<PolymarketHealthResponse> getHealth(
-      @RequestParam(name = "deep", required = false, defaultValue = "false") boolean deep,
-      @RequestParam(name = "tokenId", required = false) String tokenId
+      @RequestParam(name="deep", required=false, defaultValue="false") boolean deep,
+      @RequestParam(name="tokenId", required=false) String tokenId
   ) {
     log.info("api /health deep={} tokenId={}", deep, tokenId);
     return ResponseEntity.ok(tradingService.getHealth(deep, tokenId));

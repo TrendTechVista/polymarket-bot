@@ -13,11 +13,33 @@ import org.springframework.context.annotation.Configuration;
 
 import java.net.URI;
 import java.net.http.HttpClient;
-import java.time.Duration;
 import java.time.Clock;
+import java.time.Duration;
 
-@Configuration(proxyBeanMethods = false)
+@Configuration(proxyBeanMethods=false)
 public class PolymarketConfiguration {
+
+  private static RequestRateLimiter buildRateLimiter(HftProperties.RateLimit cfg, Clock clock) {
+    if (cfg == null || !cfg.enabled()) {
+      return RequestRateLimiter.noop();
+    }
+    if (cfg.requestsPerSecond() <= 0 || cfg.burst() <= 0) {
+      return RequestRateLimiter.noop();
+    }
+    return new TokenBucketRateLimiter(cfg.requestsPerSecond(), cfg.burst(), clock);
+  }
+
+  private static RetryPolicy buildRetryPolicy(HftProperties.Retry cfg) {
+    if (cfg == null) {
+      return new RetryPolicy(false, 1, 0, 0);
+    }
+    return new RetryPolicy(
+        cfg.enabled(),
+        Math.max(1, cfg.maxAttempts()),
+        Math.max(0, cfg.initialBackoffMillis()),
+        Math.max(0, cfg.maxBackoffMillis())
+    );
+  }
 
   @Bean
   public Clock clock() {
@@ -70,27 +92,5 @@ public class PolymarketConfiguration {
       ObjectMapper objectMapper
   ) {
     return new PolymarketGammaClient(URI.create(properties.polymarket().gammaUrl()), transport, objectMapper);
-  }
-
-  private static RequestRateLimiter buildRateLimiter(HftProperties.RateLimit cfg, Clock clock) {
-    if (cfg == null || !cfg.enabled()) {
-      return RequestRateLimiter.noop();
-    }
-    if (cfg.requestsPerSecond() <= 0 || cfg.burst() <= 0) {
-      return RequestRateLimiter.noop();
-    }
-    return new TokenBucketRateLimiter(cfg.requestsPerSecond(), cfg.burst(), clock);
-  }
-
-  private static RetryPolicy buildRetryPolicy(HftProperties.Retry cfg) {
-    if (cfg == null) {
-      return new RetryPolicy(false, 1, 0, 0);
-    }
-    return new RetryPolicy(
-        cfg.enabled(),
-        Math.max(1, cfg.maxAttempts()),
-        Math.max(0, cfg.initialBackoffMillis()),
-        Math.max(0, cfg.maxBackoffMillis())
-    );
   }
 }

@@ -37,7 +37,7 @@ class HftPropertiesBindingTest {
     });
   }
 
-  @Configuration(proxyBeanMethods = false)
+  @Configuration(proxyBeanMethods=false)
   @EnableConfigurationProperties(HftProperties.class)
   static class TestConfig {
   }

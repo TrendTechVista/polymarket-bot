@@ -26,6 +26,39 @@ public class PolymarketMarketDiscoveryService {
   private final PolymarketClobClient clobClient;
   private final ObjectMapper objectMapper;
 
+  private static String extractNextCursor(JsonNode root) {
+    if (root == null || root.isNull()) {
+      return null;
+    }
+    JsonNode v = root.get("next_cursor");
+    if (v == null || v.isNull()) {
+      v = root.get("nextCursor");
+    }
+    if (v == null || v.isNull()) {
+      return null;
+    }
+    String s = v.asText(null);
+    return s == null ? null : s.trim();
+  }
+
+  private static List<JsonNode> extractMarketList(JsonNode root) {
+    if (root == null || root.isNull()) {
+      return List.of();
+    }
+    if (root.isArray()) {
+      return PolymarketMarketParser.extractMarkets(root);
+    }
+    JsonNode data = root.get("data");
+    if (data != null && data.isArray()) {
+      return PolymarketMarketParser.extractMarkets(data);
+    }
+    JsonNode markets = root.get("markets");
+    if (markets != null && markets.isArray()) {
+      return PolymarketMarketParser.extractMarkets(markets);
+    }
+    return List.of();
+  }
+
   public List<DiscoveredMarket> searchGamma(String query) {
     if (query == null || query.isBlank()) {
       return List.of();
@@ -105,9 +138,7 @@ public class PolymarketMarketDiscoveryService {
 
       JsonNode root;
       try {
-        root = PolymarketClobPaths.SAMPLING_MARKETS.equals(path)
-            ? clobClient.samplingMarkets(query)
-            : clobClient.markets(query);
+        root = PolymarketClobPaths.SAMPLING_MARKETS.equals(path) ? clobClient.samplingMarkets(query) : clobClient.markets(query);
       } catch (Exception e) {
         log.debug("clob scan failed path={}: {}", path, e.toString());
         break;
@@ -137,16 +168,7 @@ public class PolymarketMarketDiscoveryService {
           continue;
         }
         BigDecimal volume = PolymarketMarketParser.volume(m);
-        out.add(new DiscoveredMarket(
-            "clob" + path,
-            PolymarketMarketParser.id(m),
-            PolymarketMarketParser.slug(m),
-            question,
-            tokens.get().yesTokenId(),
-            tokens.get().noTokenId(),
-            volume,
-            PolymarketMarketParser.endEpochMillis(m)
-        ));
+        out.add(new DiscoveredMarket("clob" + path, PolymarketMarketParser.id(m), PolymarketMarketParser.slug(m), question, tokens.get().yesTokenId(), tokens.get().noTokenId(), volume, PolymarketMarketParser.endEpochMillis(m)));
       }
 
       if (cursor == null) {
@@ -176,50 +198,8 @@ public class PolymarketMarketDiscoveryService {
         continue;
       }
       BigDecimal volume = PolymarketMarketParser.volume(m);
-      out.add(new DiscoveredMarket(
-          source,
-          PolymarketMarketParser.id(m),
-          PolymarketMarketParser.slug(m),
-          question,
-          tokens.get().yesTokenId(),
-          tokens.get().noTokenId(),
-          volume,
-          PolymarketMarketParser.endEpochMillis(m)
-      ));
+      out.add(new DiscoveredMarket(source, PolymarketMarketParser.id(m), PolymarketMarketParser.slug(m), question, tokens.get().yesTokenId(), tokens.get().noTokenId(), volume, PolymarketMarketParser.endEpochMillis(m)));
     }
     return out;
-  }
-
-  private static String extractNextCursor(JsonNode root) {
-    if (root == null || root.isNull()) {
-      return null;
-    }
-    JsonNode v = root.get("next_cursor");
-    if (v == null || v.isNull()) {
-      v = root.get("nextCursor");
-    }
-    if (v == null || v.isNull()) {
-      return null;
-    }
-    String s = v.asText(null);
-    return s == null ? null : s.trim();
-  }
-
-  private static List<JsonNode> extractMarketList(JsonNode root) {
-    if (root == null || root.isNull()) {
-      return List.of();
-    }
-    if (root.isArray()) {
-      return PolymarketMarketParser.extractMarkets(root);
-    }
-    JsonNode data = root.get("data");
-    if (data != null && data.isArray()) {
-      return PolymarketMarketParser.extractMarkets(data);
-    }
-    JsonNode markets = root.get("markets");
-    if (markets != null && markets.isArray()) {
-      return PolymarketMarketParser.extractMarkets(markets);
-    }
-    return List.of();
   }
 }

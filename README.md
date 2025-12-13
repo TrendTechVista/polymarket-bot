@@ -53,18 +53,22 @@ Key settings (all under `hft.*`):
 
 - `hft.mode`: `PAPER` (default) or `LIVE`
 - `hft.polymarket.auth.signature-type`: `0` (EOA), `1` (POLY_PROXY), `2` (GNOSIS_SAFE)
-- `hft.polymarket.auth.auto-create-or-derive-api-creds`: when `true` and `hft.mode=LIVE`, derive/create L2 creds from your private key
+- `hft.polymarket.auth.auto-create-or-derive-api-creds`: when `true` and `hft.mode=LIVE`, derive/create L2 creds from
+  your private key
 - `hft.risk.kill-switch`: blocks new order placement when `true`
 - `hft.polymarket.market-ws-enabled`: enable CLOB market WS cache
 - `hft.polymarket.market-asset-ids`: list of token IDs to subscribe to (market channel)
 - `hft.executor.base-url`: where `strategy-service` sends orders (default `http://localhost:8080`)
 
-Most properties are omitted from YAML because they have sane defaults in `polybot-core/src/main/java/com/polybot/hft/config/HftProperties.java`. Override any property via env var (e.g. `HFT_POLYMARKET_CLOB_REST_URL`) or `--hft....` command line flags.
+Most properties are omitted from YAML because they have sane defaults in
+`polybot-core/src/main/java/com/polybot/hft/config/HftProperties.java`. Override any property via env var (e.g.
+`HFT_POLYMARKET_CLOB_REST_URL`) or `--hft....` command line flags.
 
 ## API
 
 - `GET /api/polymarket/auth/status`: shows whether signer + API creds are configured (no secrets)
-- `POST /api/polymarket/auth/derive?nonce=N`: derive/create API creds from your private key (requires `X-HFT-LIVE-ACK: true` in `LIVE`)
+- `POST /api/polymarket/auth/derive?nonce=N`: derive/create API creds from your private key (requires
+  `X-HFT-LIVE-ACK: true` in `LIVE`)
 
 - `GET /api/polymarket/orderbook/{tokenId}`: REST orderbook snapshot
 - `GET /api/polymarket/tick-size/{tokenId}`: current minimum tick size
@@ -83,7 +87,8 @@ Gamma (market/search metadata):
 - `GET /api/polymarket/gamma/events`
 - `GET /api/polymarket/gamma/events/{id}`
 
-`/gamma/search` uses Gamma's public search when you don't pass `Authorization`/`Cookie` headers. If you do pass them, the request is forwarded to the authenticated `/search` endpoint.
+`/gamma/search` uses Gamma's public search when you don't pass `Authorization`/`Cookie` headers. If you do pass them,
+the request is forwarded to the authenticated `/search` endpoint.
 
 Example (paper mode):
 
@@ -101,7 +106,8 @@ curl -sS localhost:8080/api/polymarket/orders/limit \\
 
 ## WebSocket Notes
 
-Polymarket’s CLOB market websocket is `wss://ws-subscriptions-clob.polymarket.com/ws/market` and expects a subscribe message like:
+Polymarket’s CLOB market websocket is `wss://ws-subscriptions-clob.polymarket.com/ws/market` and expects a subscribe
+message like:
 
 ```json
 {"assets_ids":["<tokenId>"],"type":"market"}
@@ -123,7 +129,8 @@ Config:
 - `hft.polymarket.market-ws-enabled=true`
 - `hft.strategy.house-edge.enabled=true`
 - Manual mode: set `hft.strategy.house-edge.markets[*].yes-token-id/no-token-id`
-- Discovery mode: set `hft.strategy.house-edge.discovery.enabled=true` (markets are selected automatically and WS subscriptions are updated dynamically)
+- Discovery mode: set `hft.strategy.house-edge.discovery.enabled=true` (markets are selected automatically and WS
+  subscriptions are updated dynamically)
 
 ## Safety
 

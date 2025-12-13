@@ -22,12 +22,7 @@ public final class PolymarketOrderBuilder {
   private final int signatureType;
   private final String funderAddress;
 
-  public PolymarketOrderBuilder(
-      int chainId,
-      Credentials signerCredentials,
-      int signatureType,
-      String funderAddress
-  ) {
+  public PolymarketOrderBuilder(int chainId, Credentials signerCredentials, int signatureType, String funderAddress) {
     this.chainId = chainId;
     this.signerCredentials = Objects.requireNonNull(signerCredentials, "signerCredentials");
     this.signatureType = signatureType;
@@ -94,18 +89,7 @@ public final class PolymarketOrderBuilder {
     return scaled.setScale(0, RoundingMode.UNNECESSARY).toBigIntegerExact();
   }
 
-  public SignedOrder buildLimitOrder(
-      String tokenId,
-      OrderSide side,
-      BigDecimal price,
-      BigDecimal size,
-      BigDecimal tickSize,
-      boolean negRisk,
-      Integer feeRateBps,
-      Long nonce,
-      Long expirationSeconds,
-      String taker
-  ) {
+  public SignedOrder buildLimitOrder(String tokenId, OrderSide side, BigDecimal price, BigDecimal size, BigDecimal tickSize, boolean negRisk, Integer feeRateBps, Long nonce, Long expirationSeconds, String taker) {
     validatePrice(price, tickSize);
 
     RoundConfig roundConfig = RoundConfig.fromTickSize(tickSize);
@@ -123,30 +107,10 @@ public final class PolymarketOrderBuilder {
       rawTakerAmt = clampAmountDecimals(rawTakerAmt, roundConfig.amountDecimals());
     }
 
-    return signOrder(
-        tokenId,
-        side,
-        toBaseUnits(rawMakerAmt, ContractConfig.forChainId(chainId).collateralTokenDecimals()),
-        toBaseUnits(rawTakerAmt, ContractConfig.forChainId(chainId).collateralTokenDecimals()),
-        negRisk,
-        feeRateBps,
-        nonce,
-        expirationSeconds,
-        taker
-    );
+    return signOrder(tokenId, side, toBaseUnits(rawMakerAmt, ContractConfig.forChainId(chainId).collateralTokenDecimals()), toBaseUnits(rawTakerAmt, ContractConfig.forChainId(chainId).collateralTokenDecimals()), negRisk, feeRateBps, nonce, expirationSeconds, taker);
   }
 
-  public SignedOrder buildMarketOrder(
-      String tokenId,
-      OrderSide side,
-      BigDecimal amount,
-      BigDecimal price,
-      BigDecimal tickSize,
-      boolean negRisk,
-      Integer feeRateBps,
-      Long nonce,
-      String taker
-  ) {
+  public SignedOrder buildMarketOrder(String tokenId, OrderSide side, BigDecimal amount, BigDecimal price, BigDecimal tickSize, boolean negRisk, Integer feeRateBps, Long nonce, String taker) {
     validatePrice(price, tickSize);
 
     RoundConfig roundConfig = RoundConfig.fromTickSize(tickSize);
@@ -164,30 +128,10 @@ public final class PolymarketOrderBuilder {
       rawTakerAmt = clampAmountDecimals(rawTakerAmt, roundConfig.amountDecimals());
     }
 
-    return signOrder(
-        tokenId,
-        side,
-        toBaseUnits(rawMakerAmt, ContractConfig.forChainId(chainId).collateralTokenDecimals()),
-        toBaseUnits(rawTakerAmt, ContractConfig.forChainId(chainId).collateralTokenDecimals()),
-        negRisk,
-        feeRateBps,
-        nonce,
-        0L,
-        taker
-    );
+    return signOrder(tokenId, side, toBaseUnits(rawMakerAmt, ContractConfig.forChainId(chainId).collateralTokenDecimals()), toBaseUnits(rawTakerAmt, ContractConfig.forChainId(chainId).collateralTokenDecimals()), negRisk, feeRateBps, nonce, 0L, taker);
   }
 
-  private SignedOrder signOrder(
-      String tokenId,
-      OrderSide side,
-      BigInteger makerAmount,
-      BigInteger takerAmount,
-      boolean negRisk,
-      Integer feeRateBps,
-      Long nonce,
-      Long expirationSeconds,
-      String taker
-  ) {
+  private SignedOrder signOrder(String tokenId, OrderSide side, BigInteger makerAmount, BigInteger takerAmount, boolean negRisk, Integer feeRateBps, Long nonce, Long expirationSeconds, String taker) {
     ContractConfig contractConfig = ContractConfig.forChainId(chainId);
     String exchangeContract = negRisk ? contractConfig.negRiskExchange() : contractConfig.exchange();
 
@@ -197,55 +141,11 @@ public final class PolymarketOrderBuilder {
 
     String salt = Long.toString(Math.round(ThreadLocalRandom.current().nextDouble() * (double) Instant.now().toEpochMilli()));
 
-    SignedOrder unsignedOrder = new SignedOrder(
-        salt,
-        makerAddress,
-        signerAddress,
-        takerAddress,
-        tokenId,
-        makerAmount.toString(),
-        takerAmount.toString(),
-        Long.toString(expirationSeconds == null ? 0L : expirationSeconds),
-        Long.toString(nonce == null ? 0L : nonce),
-        Integer.toString(feeRateBps == null ? 0 : feeRateBps),
-        side,
-        signatureType,
-        ""
-    );
+    SignedOrder unsignedOrder = new SignedOrder(salt, makerAddress, signerAddress, takerAddress, tokenId, makerAmount.toString(), takerAmount.toString(), Long.toString(expirationSeconds == null ? 0L : expirationSeconds), Long.toString(nonce == null ? 0L : nonce), Integer.toString(feeRateBps == null ? 0 : feeRateBps), side, signatureType, "");
 
-    String signature = Eip712Signer.signOrder(
-        signerCredentials,
-        chainId,
-        exchangeContract,
-        unsignedOrder.salt(),
-        unsignedOrder.maker(),
-        unsignedOrder.signer(),
-        unsignedOrder.taker(),
-        unsignedOrder.tokenId(),
-        unsignedOrder.makerAmount(),
-        unsignedOrder.takerAmount(),
-        unsignedOrder.expiration(),
-        unsignedOrder.nonce(),
-        unsignedOrder.feeRateBps(),
-        unsignedOrder.side().toEip712Value(),
-        unsignedOrder.signatureType()
-    );
+    String signature = Eip712Signer.signOrder(signerCredentials, chainId, exchangeContract, unsignedOrder.salt(), unsignedOrder.maker(), unsignedOrder.signer(), unsignedOrder.taker(), unsignedOrder.tokenId(), unsignedOrder.makerAmount(), unsignedOrder.takerAmount(), unsignedOrder.expiration(), unsignedOrder.nonce(), unsignedOrder.feeRateBps(), unsignedOrder.side().toEip712Value(), unsignedOrder.signatureType());
 
-    return new SignedOrder(
-        unsignedOrder.salt(),
-        unsignedOrder.maker(),
-        unsignedOrder.signer(),
-        unsignedOrder.taker(),
-        unsignedOrder.tokenId(),
-        unsignedOrder.makerAmount(),
-        unsignedOrder.takerAmount(),
-        unsignedOrder.expiration(),
-        unsignedOrder.nonce(),
-        unsignedOrder.feeRateBps(),
-        unsignedOrder.side(),
-        unsignedOrder.signatureType(),
-        signature
-    );
+    return new SignedOrder(unsignedOrder.salt(), unsignedOrder.maker(), unsignedOrder.signer(), unsignedOrder.taker(), unsignedOrder.tokenId(), unsignedOrder.makerAmount(), unsignedOrder.takerAmount(), unsignedOrder.expiration(), unsignedOrder.nonce(), unsignedOrder.feeRateBps(), unsignedOrder.side(), unsignedOrder.signatureType(), signature);
   }
 
   private record RoundConfig(int priceDecimals, int sizeDecimals, int amountDecimals) {

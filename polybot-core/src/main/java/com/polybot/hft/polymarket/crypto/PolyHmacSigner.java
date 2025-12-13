@@ -24,10 +24,7 @@ public final class PolyHmacSigner {
     if (secretBase64 == null) {
       throw new IllegalArgumentException("secret must not be null");
     }
-    String sanitized = secretBase64
-        .replace('-', '+')
-        .replace('_', '/')
-        .replaceAll("[^A-Za-z0-9+/=]", "");
+    String sanitized = secretBase64.replace('-', '+').replace('_', '/').replaceAll("[^A-Za-z0-9+/=]", "");
 
     // Pad to a multiple of 4 for Java's Base64 decoder.
     int remainder = sanitized.length() % 4;

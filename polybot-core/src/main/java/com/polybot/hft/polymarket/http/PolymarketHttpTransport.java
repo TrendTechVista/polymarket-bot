@@ -30,6 +30,29 @@ public final class PolymarketHttpTransport {
     this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy");
   }
 
+  private static boolean isIdempotent(String method) {
+    return "GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method);
+  }
+
+  private static long jitter(long delayMillis) {
+    if (delayMillis <= 0) {
+      return 0;
+    }
+    long jitter = ThreadLocalRandom.current().nextLong(0, Math.min(250, delayMillis + 1));
+    return delayMillis + jitter;
+  }
+
+  private static void sleepQuietly(long delayMillis) {
+    if (delayMillis <= 0) {
+      return;
+    }
+    try {
+      TimeUnit.MILLISECONDS.sleep(delayMillis);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
   public <T> T sendJson(HttpRequest request, Class<T> type) {
     String body = sendString(request, isIdempotent(request.method()));
     try {
@@ -77,29 +100,6 @@ public final class PolymarketHttpTransport {
     }
 
     throw new IllegalStateException("Unreachable");
-  }
-
-  private static boolean isIdempotent(String method) {
-    return "GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method);
-  }
-
-  private static long jitter(long delayMillis) {
-    if (delayMillis <= 0) {
-      return 0;
-    }
-    long jitter = ThreadLocalRandom.current().nextLong(0, Math.min(250, delayMillis + 1));
-    return delayMillis + jitter;
-  }
-
-  private static void sleepQuietly(long delayMillis) {
-    if (delayMillis <= 0) {
-      return;
-    }
-    try {
-      TimeUnit.MILLISECONDS.sleep(delayMillis);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
   }
 }
 

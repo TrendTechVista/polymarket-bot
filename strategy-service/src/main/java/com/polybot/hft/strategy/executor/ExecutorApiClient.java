@@ -27,35 +27,29 @@ public class ExecutorApiClient {
   private final HttpClient httpClient;
   private final ObjectMapper objectMapper;
 
+  private static String truncate(String s) {
+    if (s == null) {
+      return "";
+    }
+    return s.length() <= 2000 ? s : s.substring(0, 2000) + "...";
+  }
+
   public BigDecimal getTickSize(String tokenId) {
     String path = "/api/polymarket/tick-size/" + tokenId;
-    HttpRequest request = baseRequest(path, Map.of())
-        .GET()
-        .timeout(HTTP_TIMEOUT)
-        .header("Accept", "application/json")
-        .build();
+    HttpRequest request = baseRequest(path, Map.of()).GET().timeout(HTTP_TIMEOUT).header("Accept", "application/json").build();
     return sendJson(request, BigDecimal.class);
   }
 
   public OrderSubmissionResult placeLimitOrder(LimitOrderRequest requestBody) {
     String path = "/api/polymarket/orders/limit";
     String body = writeJson(requestBody);
-    HttpRequest request = baseRequest(path, Map.of())
-        .POST(HttpRequest.BodyPublishers.ofString(body))
-        .timeout(HTTP_TIMEOUT)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .build();
+    HttpRequest request = baseRequest(path, Map.of()).POST(HttpRequest.BodyPublishers.ofString(body)).timeout(HTTP_TIMEOUT).header("Content-Type", "application/json").header("Accept", "application/json").build();
     return sendJson(request, OrderSubmissionResult.class);
   }
 
   public void cancelOrder(String orderId) {
     String path = "/api/polymarket/orders/" + orderId;
-    HttpRequest request = baseRequest(path, Map.of())
-        .DELETE()
-        .timeout(HTTP_TIMEOUT)
-        .header("Accept", "application/json")
-        .build();
+    HttpRequest request = baseRequest(path, Map.of()).DELETE().timeout(HTTP_TIMEOUT).header("Accept", "application/json").build();
     sendString(request);
   }
 
@@ -101,13 +95,6 @@ public class ExecutorApiClient {
     } catch (Exception e) {
       throw new RuntimeException("Failed to encode JSON", e);
     }
-  }
-
-  private static String truncate(String s) {
-    if (s == null) {
-      return "";
-    }
-    return s.length() <= 2000 ? s : s.substring(0, 2000) + "...";
   }
 }
 

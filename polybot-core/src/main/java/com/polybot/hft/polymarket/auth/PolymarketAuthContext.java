@@ -3,6 +3,7 @@ package com.polybot.hft.polymarket.auth;
 import com.polybot.hft.config.HftProperties;
 import com.polybot.hft.polymarket.clob.PolymarketClobClient;
 import com.polybot.hft.polymarket.model.ApiCreds;
+import jakarta.annotation.PostConstruct;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +13,6 @@ import org.web3j.crypto.Credentials;
 
 import java.util.Optional;
 import java.util.regex.Pattern;
-
-import jakarta.annotation.PostConstruct;
 
 @Component
 @Slf4j
@@ -33,13 +32,40 @@ public class PolymarketAuthContext {
   private volatile boolean autoDeriveEnabled;
   private volatile long configuredNonce;
 
-  public record DeriveAttempt(
-      boolean attempted,
-      boolean success,
-      String method,
-      long nonce,
-      String error
-  ) {
+  private static String strip0x(String hex) {
+    String trimmed = hex.trim();
+    return trimmed.startsWith("0x") || trimmed.startsWith("0X") ? trimmed.substring(2) : trimmed;
+  }
+
+  private static String normalizeHex20(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    if (trimmed.isEmpty()) {
+      return null;
+    }
+    if (!trimmed.startsWith("0x") && !trimmed.startsWith("0X")) {
+      return null;
+    }
+    if (!HEX_20_BYTES.matcher(trimmed).matches()) {
+      return null;
+    }
+    return "0x" + trimmed.substring(2).toLowerCase();
+  }
+
+  private static String safeSuffix(String value, int len) {
+    if (value == null || value.isBlank() || len <= 0) {
+      return "";
+    }
+    return value.length() <= len ? value : value.substring(value.length() - len);
+  }
+
+  private static void requireHex32(String value) {
+    String trimmed = value == null ? "" : value.trim();
+    if (!HEX_32_BYTES.matcher(trimmed).matches()) {
+      throw new IllegalArgumentException("hft.polymarket.auth.private-key" + " must be 0x + 64 hex chars");
+    }
   }
 
   @PostConstruct
@@ -50,40 +76,28 @@ public class PolymarketAuthContext {
     Boolean resolvedAutoDerive = environment.getProperty("hft.polymarket.auth.auto-create-or-derive-api-creds", Boolean.class);
     Long resolvedNonce = environment.getProperty("hft.polymarket.auth.nonce", Long.class);
 
-    String privateKey = (resolvedPrivateKey != null && !resolvedPrivateKey.isBlank())
-        ? resolvedPrivateKey
-        : auth.privateKey();
+    String privateKey = (resolvedPrivateKey != null && !resolvedPrivateKey.isBlank()) ? resolvedPrivateKey : auth.privateKey();
     this.autoDeriveEnabled = resolvedAutoDerive != null ? resolvedAutoDerive : auth.autoCreateOrDeriveApiCreds();
     this.configuredNonce = resolvedNonce != null ? resolvedNonce : auth.nonce();
 
-    log.info("Auth config loaded (mode={}, autoDerive={}, signerKeyPresent={}, apiKeyPresent={})",
-        properties.mode(),
-        autoDeriveEnabled,
-        privateKey != null && !privateKey.isBlank(),
-        auth.apiKey() != null && !auth.apiKey().isBlank());
+    log.info("Auth config loaded (mode={}, autoDerive={}, signerKeyPresent={}, apiKeyPresent={})", properties.mode(), autoDeriveEnabled, privateKey != null && !privateKey.isBlank(), auth.apiKey() != null && !auth.apiKey().isBlank());
     if (privateKey != null && !privateKey.isBlank()) {
-      requireHex32("hft.polymarket.auth.private-key", privateKey);
+      requireHex32(privateKey);
       this.signerCredentials = Credentials.create(strip0x(privateKey));
     }
 
     String apiKey = auth.apiKey();
     String apiSecret = auth.apiSecret();
     String apiPassphrase = auth.apiPassphrase();
-    if (apiKey != null && !apiKey.isBlank()
-        && apiSecret != null && !apiSecret.isBlank()
-        && apiPassphrase != null && !apiPassphrase.isBlank()) {
+    if (apiKey != null && !apiKey.isBlank() && apiSecret != null && !apiSecret.isBlank() && apiPassphrase != null && !apiPassphrase.isBlank()) {
       this.apiCreds = new ApiCreds(apiKey, apiSecret, apiPassphrase);
     }
 
-    if (properties.mode() == HftProperties.TradingMode.LIVE
-        && autoDeriveEnabled
-        && this.apiCreds == null) {
+    if (properties.mode() == HftProperties.TradingMode.LIVE && autoDeriveEnabled && this.apiCreds == null) {
       Credentials signer = requireSignerCredentials();
       DeriveAttempt attempt = tryCreateOrDeriveApiCreds(configuredNonce);
       if (attempt.success()) {
-        log.info("Loaded Polymarket API key creds (method={}, keySuffix=...{})",
-            attempt.method(),
-            safeSuffix(apiCreds == null ? null : apiCreds.key(), 6));
+        log.info("Loaded Polymarket API key creds (method={}, keySuffix=...{})", attempt.method(), safeSuffix(apiCreds == null ? null : apiCreds.key(), 6));
       } else if (attempt.error() != null) {
         log.warn("Failed to auto create/derive Polymarket API creds: {}", attempt.error());
       }
@@ -169,46 +183,7 @@ public class PolymarketAuthContext {
     }
   }
 
-  private static String strip0x(String hex) {
-    String trimmed = hex.trim();
-    return trimmed.startsWith("0x") || trimmed.startsWith("0X") ? trimmed.substring(2) : trimmed;
+  public record DeriveAttempt(boolean attempted, boolean success, String method, long nonce, String error) {
   }
 
-  private static String normalizeHex20(String value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.trim();
-    if (trimmed.isEmpty()) {
-      return null;
-    }
-    if (!trimmed.startsWith("0x") && !trimmed.startsWith("0X")) {
-      return null;
-    }
-    if (!HEX_20_BYTES.matcher(trimmed).matches()) {
-      return null;
-    }
-    return "0x" + trimmed.substring(2).toLowerCase();
-  }
-
-  private static String safeSuffix(String value, int len) {
-    if (value == null || value.isBlank() || len <= 0) {
-      return "";
-    }
-    return value.length() <= len ? value : value.substring(value.length() - len);
-  }
-
-  private static void requireHex32(String field, String value) {
-    String trimmed = value == null ? "" : value.trim();
-    if (!HEX_32_BYTES.matcher(trimmed).matches()) {
-      throw new IllegalArgumentException(field + " must be 0x + 64 hex chars");
-    }
-  }
-
-  private static void requireHex20(String field, String value) {
-    String trimmed = value == null ? "" : value.trim();
-    if (!HEX_20_BYTES.matcher(trimmed).matches()) {
-      throw new IllegalArgumentException(field + " must be 0x + 40 hex chars");
-    }
-  }
 }

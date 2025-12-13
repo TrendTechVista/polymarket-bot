@@ -15,6 +15,10 @@ public final class HttpRequestFactory {
     this.baseUri = Objects.requireNonNull(baseUri, "baseUri");
   }
 
+  private static String encode(String value) {
+    return URLEncoder.encode(value, StandardCharsets.UTF_8);
+  }
+
   public HttpRequest.Builder request(String path, Map<String, String> query) {
     return HttpRequest.newBuilder(buildUri(path, query));
   }
@@ -28,16 +32,9 @@ public final class HttpRequestFactory {
 
     if (query != null && !query.isEmpty()) {
       sb.append("?");
-      sb.append(query.entrySet().stream()
-          .map(e -> encode(e.getKey()) + "=" + encode(e.getValue()))
-          .reduce((a, b) -> a + "&" + b)
-          .orElse(""));
+      sb.append(query.entrySet().stream().map(e -> encode(e.getKey()) + "=" + encode(e.getValue())).reduce((a, b) -> a + "&" + b).orElse(""));
     }
     return URI.create(sb.toString());
-  }
-
-  private static String encode(String value) {
-    return URLEncoder.encode(value, StandardCharsets.UTF_8);
   }
 }
 

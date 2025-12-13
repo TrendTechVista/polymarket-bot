@@ -18,6 +18,13 @@ public final class PolymarketHttpException extends RuntimeException {
     this.responseSnippet = truncate(responseBody);
   }
 
+  private static String truncate(String s) {
+    if (s == null) {
+      return "";
+    }
+    return s.length() <= 2000 ? s : s.substring(0, 2000) + "...";
+  }
+
   public String method() {
     return method;
   }
@@ -32,13 +39,6 @@ public final class PolymarketHttpException extends RuntimeException {
 
   public String responseSnippet() {
     return responseSnippet;
-  }
-
-  private static String truncate(String s) {
-    if (s == null) {
-      return "";
-    }
-    return s.length() <= 2000 ? s : s.substring(0, 2000) + "...";
   }
 }
 

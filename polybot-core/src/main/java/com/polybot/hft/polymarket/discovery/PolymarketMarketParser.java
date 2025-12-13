@@ -11,17 +11,7 @@ import java.util.*;
 @UtilityClass
 public class PolymarketMarketParser {
 
-  private static final List<String> VOLUME_FIELDS = List.of(
-      "volume",
-      "volume24hr",
-      "volume24h",
-      "volumeUsd",
-      "volume_usd",
-      "volume24hrUsd",
-      "volume24hUsd",
-      "volume24hr_usd",
-      "volume24h_usd"
-  );
+  private static final List<String> VOLUME_FIELDS = List.of("volume", "volume24hr", "volume24h", "volumeUsd", "volume_usd", "volume24hrUsd", "volume24hUsd", "volume24hr_usd", "volume24h_usd");
 
   public static String question(JsonNode market) {
     String q = text(market, "question");
@@ -74,9 +64,7 @@ public class PolymarketMarketParser {
     String status = text(market, "status");
     if (status != null) {
       String s = status.trim().toLowerCase(Locale.ROOT);
-      if (s.contains("resolved") || s.contains("closed") || s.contains("final")) {
-        return false;
-      }
+      return !s.contains("resolved") && !s.contains("closed") && !s.contains("final");
     }
 
     return true;
@@ -101,20 +89,7 @@ public class PolymarketMarketParser {
       return null;
     }
 
-    for (String field : List.of(
-        "endDate",
-        "end_date",
-        "endTime",
-        "end_time",
-        "closeDate",
-        "close_date",
-        "closingTime",
-        "closing_time",
-        "endTimestamp",
-        "end_timestamp",
-        "endTs",
-        "end_ts"
-    )) {
+    for (String field : List.of("endDate", "end_date", "endTime", "end_time", "closeDate", "close_date", "closingTime", "closing_time", "endTimestamp", "end_timestamp", "endTs", "end_ts")) {
       JsonNode v = market.get(field);
       Long parsed = parseEpochMillis(v);
       if (parsed != null) {
@@ -230,19 +205,32 @@ public class PolymarketMarketParser {
     }
 
     int n = Math.min(outcomes.size(), tokenIds.size());
-    String yes = null;
-    String no = null;
+    Map<String, String> tokenByOutcome = new HashMap<>();
     for (int i = 0; i < n; i++) {
       String outcome = outcomes.get(i);
       String tokenId = tokenIds.get(i);
       if (outcome == null || tokenId == null) {
         continue;
       }
-      String o = outcome.trim().toUpperCase(Locale.ROOT);
-      if ("YES".equals(o)) {
-        yes = tokenId.trim();
-      } else if ("NO".equals(o)) {
-        no = tokenId.trim();
+      String o = normalizeOutcome(outcome);
+      if (o == null) {
+        continue;
+      }
+      tokenByOutcome.put(o, tokenId.trim());
+    }
+
+    String yes = tokenByOutcome.get("YES");
+    String no = tokenByOutcome.get("NO");
+    if (yes == null || yes.isBlank() || no == null || no.isBlank()) {
+      // Support common binary markets that use Up/Down outcomes.
+      yes = tokenByOutcome.get("UP");
+      no = tokenByOutcome.get("DOWN");
+    }
+    if (yes == null || yes.isBlank() || no == null || no.isBlank()) {
+      // Generic 2-outcome market fallback: treat first outcome as YES, second as NO.
+      if (outcomes.size() == 2 && tokenIds.size() >= 2) {
+        yes = tokenIds.get(0) == null ? null : tokenIds.get(0).trim();
+        no = tokenIds.get(1) == null ? null : tokenIds.get(1).trim();
       }
     }
 
@@ -279,10 +267,13 @@ public class PolymarketMarketParser {
         continue;
       }
 
-      String o = outcome.trim().toUpperCase(Locale.ROOT);
-      if ("YES".equals(o)) {
+      String o = normalizeOutcome(outcome);
+      if (o == null) {
+        continue;
+      }
+      if ("YES".equals(o) || "UP".equals(o)) {
         yes = tokenId.trim();
-      } else if ("NO".equals(o)) {
+      } else if ("NO".equals(o) || "DOWN".equals(o)) {
         no = tokenId.trim();
       }
     }
@@ -340,6 +331,17 @@ public class PolymarketMarketParser {
       }
     }
     return null;
+  }
+
+  private static String normalizeOutcome(String outcome) {
+    if (outcome == null) {
+      return null;
+    }
+    String trimmed = outcome.trim();
+    if (trimmed.isEmpty()) {
+      return null;
+    }
+    return trimmed.toUpperCase(Locale.ROOT);
   }
 
   private static String text(JsonNode node, String field) {

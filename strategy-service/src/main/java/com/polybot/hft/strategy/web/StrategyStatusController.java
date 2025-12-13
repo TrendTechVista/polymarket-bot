@@ -31,43 +31,16 @@ public class StrategyStatusController {
   public ResponseEntity<StrategyStatusResponse> status() {
     HftProperties.HouseEdge houseEdge = properties.strategy().houseEdge();
     HftProperties.HouseEdgeDiscovery discovery = houseEdge.discovery();
-    return ResponseEntity.ok(new StrategyStatusResponse(
-        properties.mode().name(),
-        environment.getActiveProfiles(),
-        properties.executor().baseUrl(),
-        properties.polymarket().marketWsEnabled(),
-        environment.getProperty("hft.polymarket.market-ws-enabled"),
-        marketWs.isStarted(),
-        marketWs.subscribedAssetCount(),
-        houseEdge.enabled(),
-        discovery != null && discovery.enabled(),
-        environment.getProperty("hft.strategy.house-edge.enabled"),
-        environment.getProperty("hft.strategy.house-edge.discovery.enabled"),
-        environment.getProperty("hft.strategy.house-edge.discovery.queries"),
-        discovery == null ? List.of() : discovery.queries(),
-        houseEdgeEngine.activeMarketCount(),
-        discoveryRunner.lastRefreshEpochMillis(),
-        discoveryRunner.lastSelectedMarkets()
-    ));
+    return ResponseEntity.ok(new StrategyStatusResponse(properties.mode().name(), environment.getActiveProfiles(), properties.executor().baseUrl(), properties.polymarket().marketWsEnabled(), environment.getProperty("hft.polymarket.market-ws-enabled"), marketWs.isStarted(), marketWs.subscribedAssetCount(), houseEdge.enabled(), discovery != null && discovery.enabled(), environment.getProperty("hft.strategy.house-edge.enabled"), environment.getProperty("hft.strategy.house-edge.discovery.enabled"), environment.getProperty("hft.strategy.house-edge.discovery.queries"), discovery == null ? List.of() : discovery.queries(), houseEdgeEngine.activeMarketCount(), discoveryRunner.lastRefreshEpochMillis(), discoveryRunner.lastSelectedMarkets()));
   }
 
-  public record StrategyStatusResponse(
-      String mode,
-      String[] activeProfiles,
-      String executorBaseUrl,
-      boolean marketWsEnabled,
-      String resolvedMarketWsEnabledProperty,
-      boolean marketWsStarted,
-      int marketWsSubscribedAssets,
-      boolean houseEdgeEnabled,
-      boolean houseEdgeDiscoveryEnabled,
-      String resolvedHouseEdgeEnabledProperty,
-      String resolvedHouseEdgeDiscoveryEnabledProperty,
-      String resolvedHouseEdgeDiscoveryQueriesProperty,
-      List<String> houseEdgeQueries,
-      int houseEdgeActiveMarkets,
-      long discoveryLastRefreshEpochMillis,
-      int discoveryLastSelectedMarkets
-  ) {
+  public record StrategyStatusResponse(String mode, String[] activeProfiles, String executorBaseUrl,
+                                       boolean marketWsEnabled, String resolvedMarketWsEnabledProperty,
+                                       boolean marketWsStarted, int marketWsSubscribedAssets, boolean houseEdgeEnabled,
+                                       boolean houseEdgeDiscoveryEnabled, String resolvedHouseEdgeEnabledProperty,
+                                       String resolvedHouseEdgeDiscoveryEnabledProperty,
+                                       String resolvedHouseEdgeDiscoveryQueriesProperty, List<String> houseEdgeQueries,
+                                       int houseEdgeActiveMarkets, long discoveryLastRefreshEpochMillis,
+                                       int discoveryLastSelectedMarkets) {
   }
 }

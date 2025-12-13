@@ -2,21 +2,9 @@ package com.polybot.hft.polymarket.model;
 
 import com.polybot.hft.domain.OrderSide;
 
-public record SignedOrder(
-    String salt,
-    String maker,
-    String signer,
-    String taker,
-    String tokenId,
-    String makerAmount,
-    String takerAmount,
-    String expiration,
-    String nonce,
-    String feeRateBps,
-    OrderSide side,
-    int signatureType,
-    String signature
-) {
+public record SignedOrder(String salt, String maker, String signer, String taker, String tokenId, String makerAmount,
+                          String takerAmount, String expiration, String nonce, String feeRateBps, OrderSide side,
+                          int signatureType, String signature) {
   public SignedOrder {
     if (salt == null || salt.isBlank()) {
       throw new IllegalArgumentException("salt must not be blank");

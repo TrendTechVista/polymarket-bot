@@ -3,13 +3,13 @@ package com.polybot.hft.polymarket.strategy;
 import com.polybot.hft.config.HftProperties;
 import com.polybot.hft.polymarket.discovery.DiscoveredMarket;
 import com.polybot.hft.polymarket.discovery.PolymarketMarketDiscoveryService;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.Executors;
@@ -40,6 +40,67 @@ public class HouseEdgeMarketDiscoveryRunner {
   private final AtomicInteger lastSelectedMarkets = new AtomicInteger(0);
   private volatile long lastNoMarketsLogAtMillis = 0L;
   private volatile Set<String> lastMarketKeys = Set.of();
+
+  private static List<DiscoveredMarket> filterByAssetQueries(List<DiscoveredMarket> markets, List<String> queries) {
+    if (markets == null || markets.isEmpty() || queries == null || queries.isEmpty()) {
+      return markets == null ? List.of() : markets;
+    }
+    Set<String> needles = new HashSet<>();
+    for (String q : queries) {
+      if (q == null || q.isBlank()) {
+        continue;
+      }
+      String norm = q.trim().toLowerCase(Locale.ROOT);
+      needles.add(norm);
+      switch (norm) {
+        case "bitcoin", "btc" -> needles.add("btc");
+        case "ethereum", "eth" -> needles.add("eth");
+        case "solana", "sol" -> needles.add("sol");
+        case "xrp", "ripple" -> {
+          needles.add("xrp");
+          needles.add("ripple");
+        }
+        default -> {
+        }
+      }
+    }
+
+    List<DiscoveredMarket> out = new ArrayList<>();
+    for (DiscoveredMarket m : markets) {
+      if (m == null) {
+        continue;
+      }
+      String question = m.question() == null ? "" : m.question().toLowerCase(Locale.ROOT);
+      String slug = m.slug() == null ? "" : m.slug().toLowerCase(Locale.ROOT);
+      for (String n : needles) {
+        if (n.isEmpty()) {
+          continue;
+        }
+        if (question.contains(n) || slug.contains(n)) {
+          out.add(m);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  private static String marketKey(String yesTokenId, String noTokenId) {
+    String yes = yesTokenId == null ? "" : yesTokenId.trim();
+    String no = noTokenId == null ? "" : noTokenId.trim();
+    return yes + ":" + no;
+  }
+
+  private static String safeName(String question) {
+    if (question == null) {
+      return null;
+    }
+    String q = question.trim();
+    if (q.isEmpty()) {
+      return null;
+    }
+    return q.length() <= 120 ? q : q.substring(0, 117) + "...";
+  }
 
   @PostConstruct
   void startIfEnabled() {
@@ -81,10 +142,14 @@ public class HouseEdgeMarketDiscoveryRunner {
 
     List<DiscoveredMarket> candidates = new ArrayList<>();
     int gammaCandidateCount = 0;
+    int gammaAfterAssetFilterCount = 0;
+    int clobCandidateCount = 0;
     if (require15m) {
       List<DiscoveredMarket> upOrDown = discoveryService.searchGammaUpOrDown15mEndingSoon();
       gammaCandidateCount = upOrDown.size();
-      candidates.addAll(filterByAssetQueries(upOrDown, discovery.queries()));
+      List<DiscoveredMarket> gammaFiltered = filterByAssetQueries(upOrDown, discovery.queries());
+      gammaAfterAssetFilterCount = gammaFiltered.size();
+      candidates.addAll(gammaFiltered);
     } else {
       for (String q : discovery.queries()) {
         candidates.addAll(discoveryService.searchGamma(q));
@@ -92,7 +157,9 @@ public class HouseEdgeMarketDiscoveryRunner {
     }
     if (candidates.isEmpty()) {
       for (String q : discovery.queries()) {
-        candidates.addAll(discoveryService.scanClobByQuestionContains(q));
+        List<DiscoveredMarket> scanned = discoveryService.scanClobByQuestionContains(q);
+        clobCandidateCount += scanned.size();
+        candidates.addAll(scanned);
       }
     }
 
@@ -130,7 +197,7 @@ public class HouseEdgeMarketDiscoveryRunner {
 
     List<DiscoveredMarket> filtered = new ArrayList<>(bestByKey.values());
     if (filtered.isEmpty()) {
-      maybeLogNoMarkets(discovery, gammaCandidateCount, candidates.size());
+      maybeLogNoMarkets(discovery, gammaCandidateCount, gammaAfterAssetFilterCount, clobCandidateCount);
       return;
     }
 
@@ -180,86 +247,36 @@ public class HouseEdgeMarketDiscoveryRunner {
     }
     lastMarketKeys = Set.copyOf(nextKeys);
 
-    log.info("house-edge discovered markets selected={}", next.size());
+    List<String> labels = next.stream()
+        .map(m -> m.name() == null ? null : m.name().trim())
+        .filter(s -> s != null && !s.isBlank())
+        .limit(3)
+        .toList();
+    log.info("house-edge discovered markets selected={} markets={}", next.size(), labels);
     lastSelectedMarkets.set(next.size());
     engine.setMarkets(next);
   }
 
-  private static List<DiscoveredMarket> filterByAssetQueries(List<DiscoveredMarket> markets, List<String> queries) {
-    if (markets == null || markets.isEmpty() || queries == null || queries.isEmpty()) {
-      return markets == null ? List.of() : markets;
-    }
-    Set<String> needles = new HashSet<>();
-    for (String q : queries) {
-      if (q == null || q.isBlank()) {
-        continue;
-      }
-      String norm = q.trim().toLowerCase(Locale.ROOT);
-      needles.add(norm);
-      switch (norm) {
-        case "bitcoin", "btc" -> needles.add("btc");
-        case "ethereum", "eth" -> needles.add("eth");
-        case "solana", "sol" -> needles.add("sol");
-        case "xrp", "ripple" -> {
-          needles.add("xrp");
-          needles.add("ripple");
-        }
-        default -> {
-        }
-      }
-    }
-
-    List<DiscoveredMarket> out = new ArrayList<>();
-    for (DiscoveredMarket m : markets) {
-      if (m == null) {
-        continue;
-      }
-      String question = m.question() == null ? "" : m.question().toLowerCase(Locale.ROOT);
-      String slug = m.slug() == null ? "" : m.slug().toLowerCase(Locale.ROOT);
-      for (String n : needles) {
-        if (n.isEmpty()) {
-          continue;
-        }
-        if (question.contains(n) || slug.contains(n)) {
-          out.add(m);
-          break;
-        }
-      }
-    }
-    return out;
-  }
-
-  private void maybeLogNoMarkets(HftProperties.HouseEdgeDiscovery discovery, int gammaCandidateCount, int candidateCountAfterAssetFilter) {
+  private void maybeLogNoMarkets(
+      HftProperties.HouseEdgeDiscovery discovery,
+      int gammaCandidateCount,
+      int gammaAfterAssetFilterCount,
+      int clobCandidateCount
+  ) {
     long now = System.currentTimeMillis();
     long last = lastNoMarketsLogAtMillis;
     if (now - last < 60_000L) {
       return;
     }
     lastNoMarketsLogAtMillis = now;
-    log.info("house-edge discovery found no markets (queries={}, require15m={}, minVolume={}, maxMarkets={}, gammaCandidates={}, afterAssetFilter={})",
+    log.info("house-edge discovery found no markets (queries={}, require15m={}, minVolume={}, maxMarkets={}, gammaCandidates={}, gammaAfterAssetFilter={}, clobCandidates={})",
         discovery.queries(),
         discovery.require15m(),
         discovery.minVolume(),
         discovery.maxMarkets(),
         gammaCandidateCount,
-        candidateCountAfterAssetFilter);
-  }
-
-  private static String marketKey(String yesTokenId, String noTokenId) {
-    String yes = yesTokenId == null ? "" : yesTokenId.trim();
-    String no = noTokenId == null ? "" : noTokenId.trim();
-    return yes + ":" + no;
-  }
-
-  private static String safeName(String question) {
-    if (question == null) {
-      return null;
-    }
-    String q = question.trim();
-    if (q.isEmpty()) {
-      return null;
-    }
-    return q.length() <= 120 ? q : q.substring(0, 117) + "...";
+        gammaAfterAssetFilterCount,
+        clobCandidateCount);
   }
 
   public long lastRefreshEpochMillis() {

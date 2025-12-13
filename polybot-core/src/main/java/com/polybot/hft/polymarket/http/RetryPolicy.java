@@ -9,6 +9,21 @@ public record RetryPolicy(
     long maxBackoffMillis
 ) {
 
+  private static Long parseRetryAfterSeconds(String raw) {
+    if (raw == null) {
+      return null;
+    }
+    String t = raw.trim();
+    if (t.isEmpty()) {
+      return null;
+    }
+    try {
+      return Long.parseLong(t);
+    } catch (NumberFormatException ignored) {
+      return null;
+    }
+  }
+
   public boolean isRetryableStatus(int statusCode) {
     if (statusCode == 429 || statusCode == 408) {
       return true;
@@ -31,21 +46,6 @@ public record RetryPolicy(
       delay = Math.min(max, delay * 2);
     }
     return delay;
-  }
-
-  private static Long parseRetryAfterSeconds(String raw) {
-    if (raw == null) {
-      return null;
-    }
-    String t = raw.trim();
-    if (t.isEmpty()) {
-      return null;
-    }
-    try {
-      return Long.parseLong(t);
-    } catch (NumberFormatException ignored) {
-      return null;
-    }
   }
 }
 

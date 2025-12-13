@@ -1,9 +1,9 @@
 package com.polybot.hft.polymarket.http;
 
+import lombok.experimental.UtilityClass;
+
 import java.net.http.HttpRequest;
 import java.util.Map;
-
-import lombok.experimental.UtilityClass;
 
 @UtilityClass
 public class HttpHeadersUtil {

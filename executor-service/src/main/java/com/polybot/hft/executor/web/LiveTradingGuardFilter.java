@@ -8,6 +8,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -38,11 +39,7 @@ public class LiveTradingGuardFilter extends OncePerRequestFilter {
   }
 
   @Override
-  protected void doFilterInternal(
-      HttpServletRequest request,
-      HttpServletResponse response,
-      FilterChain filterChain
-  ) throws ServletException, IOException {
+  protected void doFilterInternal(@NotNull HttpServletRequest request, @NotNull HttpServletResponse response, @NotNull FilterChain filterChain) throws ServletException, IOException {
     if (properties.mode() == HftProperties.TradingMode.LIVE) {
       String ack = request.getHeader(HEADER_LIVE_ACK);
       if (!"true".equalsIgnoreCase(ack)) {

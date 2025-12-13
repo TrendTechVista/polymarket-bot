@@ -29,6 +29,14 @@ public final class TokenBucketRateLimiter implements RequestRateLimiter {
     this.lastRefill = Instant.now(clock);
   }
 
+  private static void sleepQuietly(long millis) {
+    try {
+      TimeUnit.MILLISECONDS.sleep(millis);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
   @Override
   public void acquire() {
     while (true) {
@@ -55,14 +63,6 @@ public final class TokenBucketRateLimiter implements RequestRateLimiter {
     double add = elapsed.toNanos() / 1_000_000_000.0 * tokensPerSecond;
     availableTokens = Math.min(burst, availableTokens + add);
     lastRefill = now;
-  }
-
-  private static void sleepQuietly(long millis) {
-    try {
-      TimeUnit.MILLISECONDS.sleep(millis);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
   }
 }
 
