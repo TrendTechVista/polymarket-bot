@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: strategy-service
+  threads:
+    virtual:
+      enabled: true
+server:
+  port: 8081
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+hft:
+  mode: PAPER
+  executor:
+    base-url: http://localhost:8080
+    send-live-ack: true
+  polymarket:
+    clob-ws-url: wss://ws-subscriptions-clob.polymarket.com
+    market-ws-enabled: false
+    market-asset-ids: [ ]
+  strategy:
+    midpoint-maker:
+      enabled: false
+      quote-size: 5
+      spread: 0.01
+      refresh-millis: 1000
+    house-edge:
+      enabled: false
+      refresh-millis: 250
+      trade-samples: 10
+      trade-window-seconds: 30
+      aggressive-improve-ticks: 1
+      passive-away-ticks: 10
+      quote-size: 5
+      loser-inventory-limit: 0
+      markets: [ ]

@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: strategy-service
+
+server:
+  port: 8081
+
+hft:
+  mode: PAPER
+  executor:
+    base-url: http://localhost:8080
+    send-live-ack: true
+
