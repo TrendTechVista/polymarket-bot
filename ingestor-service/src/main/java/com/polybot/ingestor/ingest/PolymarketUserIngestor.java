@@ -29,6 +29,8 @@ public class PolymarketUserIngestor {
   private static final Pattern ETH_ADDRESS = Pattern.compile("^0x[a-fA-F0-9]{40}$");
   private static final long POSITIONS_SNAPSHOT_MIN_INTERVAL_MILLIS = 60_000L;
   private static final int DEFAULT_SEEN_KEYS_CAPACITY = 25_000;
+  private static final int DATA_API_MAX_LIMIT = 500;
+  private static final int DATA_API_MAX_OFFSET = 1_000;
 
   private final @NonNull IngestorProperties properties;
   private final @NonNull PolymarketProfileResolver profileResolver;
@@ -165,26 +167,50 @@ public class PolymarketUserIngestor {
 
   private void backfillTrades(Target t) {
     Integer maxPages = properties.polling().backfillMaxPages();
-    int pageSize = properties.polling().pageSize();
+    int pageSize = Math.max(1, Math.min(DATA_API_MAX_LIMIT, properties.polling().pageSize()));
     long delayMillis = properties.polling().requestDelayMillis();
 
     log.info("ingestor backfill starting username={} proxyAddress={} pageSize={} maxPages={}", safe(t.username), suffix(t.proxyAddress), pageSize, maxPages);
 
     int offset = 0;
     int page = 0;
+    boolean fetchedTail = false;
+    String lastSignature = null;
     while (true) {
       if (maxPages != null && page >= maxPages) {
         break;
       }
 
-      ArrayNode trades = dataApi.getTrades(t.proxyAddress, pageSize, offset);
+      int requestOffset = offset;
+      int requestLimit = pageSize;
+      if (requestOffset >= DATA_API_MAX_OFFSET) {
+        if (fetchedTail) {
+          break;
+        }
+        fetchedTail = true;
+        requestOffset = DATA_API_MAX_OFFSET;
+        requestLimit = DATA_API_MAX_LIMIT;
+      }
+
+      ArrayNode trades = dataApi.getTrades(t.proxyAddress, requestLimit, requestOffset);
       if (trades.isEmpty()) {
         break;
       }
 
       int published = publishTrades(t, trades);
-      if (page == 0 || page % 10 == 0) {
-        log.info("ingestor backfill progress page={} offset={} fetched={} published={}", page, offset, trades.size(), published);
+      String signature = pageSignature(trades);
+      if (signature != null && signature.equals(lastSignature)) {
+        log.info("ingestor backfill reached stable tail offset={} limit={} fetched={} published={}", requestOffset, requestLimit, trades.size(), published);
+        break;
+      }
+      lastSignature = signature;
+
+      if (page % 10 == 0) {
+        log.info("ingestor backfill progress page={} offset={} limit={} fetched={} published={}", page, requestOffset, requestLimit, trades.size(), published);
+      }
+
+      if (fetchedTail) {
+        break;
       }
 
       offset += trades.size();
@@ -283,6 +309,17 @@ public class PolymarketUserIngestor {
       published++;
     }
     return published;
+  }
+
+  private static String pageSignature(ArrayNode trades) {
+    if (trades == null || trades.isEmpty()) {
+      return null;
+    }
+    String firstTx = trades.get(0).path("transactionHash").asText("");
+    String lastTx = trades.get(trades.size() - 1).path("transactionHash").asText("");
+    long firstTs = trades.get(0).path("timestamp").asLong(0);
+    long lastTs = trades.get(trades.size() - 1).path("timestamp").asLong(0);
+    return "%d|%s|%d|%s|%d".formatted(trades.size(), firstTx, firstTs, lastTx, lastTs);
   }
 
   private static String buildTradeEventKey(String proxyAddress, String transactionHash, String asset, String side, long tsSeconds) {

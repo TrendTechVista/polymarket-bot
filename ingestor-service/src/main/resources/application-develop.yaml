@@ -7,4 +7,5 @@ ingestor:
     username: gabagool22
   polling:
     enabled: true
-    backfill-on-start: false
+    backfill-on-start: true
+    page-size: 500
