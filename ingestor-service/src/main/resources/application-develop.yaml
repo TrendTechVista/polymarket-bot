@@ -1,0 +1,10 @@
+hft:
+  events:
+    enabled: true
+
+ingestor:
+  polymarket:
+    username: gabagool22
+  polling:
+    enabled: true
+    backfill-on-start: false

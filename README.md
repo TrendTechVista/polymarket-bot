@@ -5,6 +5,7 @@ Two-process layout (low-latency):
 - `executor-service`: owns keys, derives creds, signs and places orders (REST API for Postman/curl)
 - `strategy-service`: connects to public market WS, runs strategies, sends orders to `executor-service`
 - `analytics-service`: query API over ClickHouse (events ingested from Kafka)
+- `ingestor-service`: fetches Polymarket public user activity/positions and publishes to Kafka
 
 Core Polymarket integration lives in `polybot-core`.
 
@@ -26,17 +27,17 @@ Core Polymarket integration lives in `polybot-core`.
 mvn test
 
 # Terminal 1 (API executor)
-mvn -pl executor-service spring-boot:run -Dspring-boot.run.profiles=develop
+mvn -pl executor-service -am spring-boot:run -Dspring-boot.run.profiles=develop
 
 # Terminal 2 (strategy runner)
-mvn -pl strategy-service spring-boot:run -Dspring-boot.run.profiles=develop
+mvn -pl strategy-service -am spring-boot:run -Dspring-boot.run.profiles=develop
 ```
 
 Analytics (local infra + service):
 
 ```bash
 docker compose -f docker-compose.analytics.yaml up -d
-mvn -pl analytics-service spring-boot:run -Dspring-boot.run.profiles=develop
+mvn -pl analytics-service -am spring-boot:run -Dspring-boot.run.profiles=develop
 ```
 
 To publish events into Kafka (stored in ClickHouse), enable it on the producers (either via env vars or YAML):
@@ -53,6 +54,7 @@ YAML alternative (recommended for `develop`):
 
 - `executor-service/src/main/resources/application-develop.yaml`
 - `strategy-service/src/main/resources/application-develop.yaml`
+- `ingestor-service/src/main/resources/application-develop.yaml`
 
 ```yaml
 hft:
@@ -64,6 +66,13 @@ Then start `executor-service` + `strategy-service` as usual and query:
 
 ```bash
 curl -sS localhost:8082/api/analytics/events?limit=50 | jq
+```
+
+Public user ingestor:
+
+```bash
+mvn -pl ingestor-service -am spring-boot:run -Dspring-boot.run.profiles=develop
+curl -sS localhost:8083/api/ingestor/status | jq
 ```
 
 ## Configuration

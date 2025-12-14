@@ -13,3 +13,7 @@ management:
     web:
       exposure:
         include: health,info,metrics
+
+logging:
+  level:
+    org.apache.kafka: WARN

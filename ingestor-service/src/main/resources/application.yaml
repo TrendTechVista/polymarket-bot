@@ -1,0 +1,9 @@
+spring:
+  config:
+    import: classpath:polybot-common.yaml
+  application:
+    name: ingestor-service
+
+server:
+  port: 8083
+

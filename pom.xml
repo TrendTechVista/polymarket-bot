@@ -23,6 +23,7 @@
         <module>executor-service</module>
         <module>strategy-service</module>
         <module>analytics-service</module>
+        <module>ingestor-service</module>
     </modules>
 
     <properties>
@@ -31,6 +32,16 @@
     </properties>
 
     <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+                <inherited>false</inherited>
+            </plugin>
+        </plugins>
         <pluginManagement>
             <plugins>
                 <plugin>
