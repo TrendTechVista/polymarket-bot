@@ -20,3 +20,8 @@ hs_err_pid*
 
 # Local config / secrets
 .env
+
+# Research / notebooks
+research/data/
+research/.ipynb_checkpoints/
+.venv/
