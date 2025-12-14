@@ -1,6 +1,7 @@
 package com.polybot.analytics.repo;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 public interface UserTradeAnalyticsRepository {
@@ -36,6 +37,26 @@ public interface UserTradeAnalyticsRepository {
   List<HourlyTradeActivity> hourlyTradeActivity(String username);
 
   List<UpDown15mAssetActivity> upDown15mAssetActivity(String username);
+
+  MarketSelectionSummary selectionSummary(String username);
+
+  MarketChurnStats marketChurn(String username);
+
+  List<SeriesActivity> seriesActivity(String username);
+
+  List<UpDown15mAssetTimingQuantiles> upDown15mTimingQuantilesByAsset(String username);
+
+  List<UpDown15mOutcomeTimingQuantiles> upDown15mTimingQuantilesByOutcome(String username);
+
+  List<UpDown15mMarketTimingQuantiles> upDown15mTimingQuantilesByMarket(String username, int limit);
+
+  List<UpDown15mDailyAssetTiming> upDown15mDailyTimingByAsset(String username);
+
+  ExecutionQualityReport executionQualityReport(String username);
+
+  List<ExecutionTypePnl> realizedPnlByExecutionType(String username);
+
+  List<SeriesPnl> realizedPnlBySeries(String username);
 
   record UserTradeStats(
       long trades,
@@ -170,6 +191,135 @@ public interface UserTradeAnalyticsRepository {
       double notionalUsd,
       double avgPrice,
       double avgSize
+  ) {
+  }
+
+  record MarketSelectionSummary(
+      long trades,
+      long uniqueMarkets,
+      long uniqueAssets,
+      long top1Trades,
+      double top1Share,
+      long top5Trades,
+      double top5Share,
+      long top10Trades,
+      double top10Share,
+      double marketHhi
+  ) {
+  }
+
+  record MarketChurnStats(
+      long trades,
+      long marketSwitches,
+      double marketSwitchRate,
+      double avgSecondsBetweenTrades,
+      long p50SecondsBetweenTrades,
+      long p90SecondsBetweenTrades
+  ) {
+  }
+
+  record SeriesActivity(
+      String series,
+      long trades,
+      double notionalUsd
+  ) {
+  }
+
+  record UpDown15mAssetTimingQuantiles(
+      String asset,
+      long trades,
+      long minSecondsToEnd,
+      long p10SecondsToEnd,
+      long p50SecondsToEnd,
+      long p90SecondsToEnd,
+      long maxSecondsToEnd,
+      double avgSecondsToEnd
+  ) {
+  }
+
+  record UpDown15mOutcomeTimingQuantiles(
+      String outcome,
+      long trades,
+      long minSecondsToEnd,
+      long p10SecondsToEnd,
+      long p50SecondsToEnd,
+      long p90SecondsToEnd,
+      long maxSecondsToEnd,
+      double avgSecondsToEnd
+  ) {
+  }
+
+  record UpDown15mMarketTimingQuantiles(
+      String marketSlug,
+      String title,
+      long trades,
+      long minSecondsToEnd,
+      long p10SecondsToEnd,
+      long p50SecondsToEnd,
+      long p90SecondsToEnd,
+      long maxSecondsToEnd,
+      double avgSecondsToEnd
+  ) {
+  }
+
+  record UpDown15mDailyAssetTiming(
+      LocalDate day,
+      String asset,
+      long trades,
+      long p50SecondsToEnd,
+      double avgSecondsToEnd
+  ) {
+  }
+
+  record DistributionStats(
+      double avg,
+      double p10,
+      double p50,
+      double p90,
+      double min,
+      double max
+  ) {
+  }
+
+  record SideExecutionReport(
+      long tradesWithTob,
+      long takerLike,
+      long makerLike,
+      long inside,
+      DistributionStats costVsMid,
+      DistributionStats effectiveSpread,
+      DistributionStats effectiveSpreadToQuotedRatio
+  ) {
+  }
+
+  record ExecutionQualityReport(
+      long trades,
+      long tradesWithTob,
+      double tobCoverage,
+      DistributionStats spread,
+      DistributionStats tobLagMillis,
+      SideExecutionReport buy,
+      SideExecutionReport sell
+  ) {
+  }
+
+  record ExecutionTypePnl(
+      String side,
+      String executionType,
+      long resolvedTrades,
+      double realizedPnlUsd,
+      double avgPnlPerTrade,
+      double winRate
+  ) {
+  }
+
+  record SeriesPnl(
+      String series,
+      long resolvedTrades,
+      double realizedPnlUsd,
+      double avgPnlPerTrade,
+      double winRate,
+      double notionalUsd
   ) {
   }
 }

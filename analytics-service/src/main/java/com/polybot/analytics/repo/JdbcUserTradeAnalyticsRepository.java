@@ -5,7 +5,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
+import java.sql.Date;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 @Repository
@@ -537,6 +539,551 @@ public class JdbcUserTradeAnalyticsRepository implements UserTradeAnalyticsRepos
     ), username);
   }
 
+  @Override
+  public MarketSelectionSummary selectionSummary(String username) {
+    String sql = """
+        WITH
+          totals AS (
+            SELECT
+              count() AS trades,
+              uniqExact(market_slug) AS unique_markets,
+              uniqExact(token_id) AS unique_assets
+            FROM user_trades_dedup
+            WHERE username = ?
+          ),
+          market_counts AS (
+            SELECT
+              market_slug,
+              count() AS market_trades
+            FROM user_trades_dedup
+            WHERE username = ?
+            GROUP BY market_slug
+          ),
+          ranked AS (
+            SELECT
+              market_trades,
+              row_number() OVER (ORDER BY market_trades DESC) AS rn
+            FROM market_counts
+          )
+        SELECT
+          any(t.trades) AS trades,
+          any(t.unique_markets) AS unique_markets,
+          any(t.unique_assets) AS unique_assets,
+          maxIf(r.market_trades, r.rn = 1) AS top1_trades,
+          sumIf(r.market_trades, r.rn <= 5) AS top5_trades,
+          sumIf(r.market_trades, r.rn <= 10) AS top10_trades,
+          sum(pow(r.market_trades, 2)) / pow(if(any(t.trades) > 0, any(t.trades), 1), 2) AS market_hhi
+        FROM ranked r
+        CROSS JOIN totals t
+        """;
+
+    return jdbcTemplate.query(sql, rs -> {
+      if (!rs.next()) {
+        return new MarketSelectionSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+      }
+      long trades = rs.getLong("trades");
+      long uniqueMarkets = rs.getLong("unique_markets");
+      long uniqueAssets = rs.getLong("unique_assets");
+      long top1Trades = rs.getLong("top1_trades");
+      long top5Trades = rs.getLong("top5_trades");
+      long top10Trades = rs.getLong("top10_trades");
+      double marketHhi = rs.getDouble("market_hhi");
+
+      double top1Share = trades > 0 ? ((double) top1Trades) / trades : 0;
+      double top5Share = trades > 0 ? ((double) top5Trades) / trades : 0;
+      double top10Share = trades > 0 ? ((double) top10Trades) / trades : 0;
+
+      return new MarketSelectionSummary(
+          trades,
+          uniqueMarkets,
+          uniqueAssets,
+          top1Trades,
+          top1Share,
+          top5Trades,
+          top5Share,
+          top10Trades,
+          top10Share,
+          marketHhi
+      );
+    }, username, username);
+  }
+
+  @Override
+  public MarketChurnStats marketChurn(String username) {
+    String sql = """
+        SELECT
+          count() AS trades,
+          countIf(rn > 1 AND market_slug != prev_market_slug) AS market_switches,
+          if(
+            count() > 1,
+            countIf(rn > 1 AND market_slug != prev_market_slug) / (count() - 1),
+            0
+          ) AS market_switch_rate,
+          avgIf(delta_seconds, rn > 1) AS avg_seconds_between_trades,
+          quantileExactIf(0.50)(delta_seconds, rn > 1) AS p50_seconds_between_trades,
+          quantileExactIf(0.90)(delta_seconds, rn > 1) AS p90_seconds_between_trades
+        FROM (
+          SELECT
+            ts,
+            market_slug,
+            event_key,
+            row_number() OVER (ORDER BY ts ASC, event_key ASC) AS rn,
+            lagInFrame(ts) OVER (ORDER BY ts ASC, event_key ASC) AS prev_ts,
+            lagInFrame(market_slug) OVER (ORDER BY ts ASC, event_key ASC) AS prev_market_slug,
+            dateDiff('second', prev_ts, ts) AS delta_seconds
+          FROM user_trades_dedup
+          WHERE username = ?
+        )
+        """;
+
+    return jdbcTemplate.query(sql, rs -> {
+      if (!rs.next()) {
+        return new MarketChurnStats(0, 0, 0, 0, 0, 0);
+      }
+      return new MarketChurnStats(
+          rs.getLong("trades"),
+          rs.getLong("market_switches"),
+          rs.getDouble("market_switch_rate"),
+          rs.getDouble("avg_seconds_between_trades"),
+          rs.getLong("p50_seconds_between_trades"),
+          rs.getLong("p90_seconds_between_trades")
+      );
+    }, username);
+  }
+
+  @Override
+  public List<SeriesActivity> seriesActivity(String username) {
+    String sql = """
+        WITH multiIf(
+          position(market_slug, 'updown-15m-') > 0, 'updown-15m',
+          position(lower(title), 'up or down') > 0, 'up-or-down',
+          position(lower(market_slug), 'updown') > 0, 'updown',
+          'other'
+        ) AS series
+        SELECT
+          series,
+          count() AS trades,
+          sum(size * price) AS notional_usd
+        FROM user_trades_dedup
+        WHERE username = ?
+        GROUP BY series
+        ORDER BY trades DESC
+        """;
+    return jdbcTemplate.query(sql, (rs, rowNum) -> new SeriesActivity(
+        rs.getString(1),
+        rs.getLong(2),
+        rs.getDouble(3)
+    ), username);
+  }
+
+  @Override
+  public List<UpDown15mAssetTimingQuantiles> upDown15mTimingQuantilesByAsset(String username) {
+    String sql = """
+        WITH
+          toUInt32OrZero(arrayElement(splitByChar('-', market_slug), -1)) AS market_start_epoch,
+          dateDiff('second', ts, toDateTime(market_start_epoch + 900)) AS seconds_to_end,
+          upper(arrayElement(splitByChar('-', market_slug), 1)) AS asset
+        SELECT
+          asset,
+          count() AS trades,
+          min(seconds_to_end) AS min_seconds_to_end,
+          quantileExact(0.10)(seconds_to_end) AS p10_seconds_to_end,
+          quantileExact(0.50)(seconds_to_end) AS p50_seconds_to_end,
+          quantileExact(0.90)(seconds_to_end) AS p90_seconds_to_end,
+          max(seconds_to_end) AS max_seconds_to_end,
+          avg(seconds_to_end) AS avg_seconds_to_end
+        FROM user_trades_dedup
+        WHERE username = ?
+          AND position(market_slug, 'updown-15m-') > 0
+          AND market_start_epoch > 0
+          AND asset != ''
+          AND seconds_to_end BETWEEN -60 AND 900
+        GROUP BY asset
+        ORDER BY trades DESC
+        """;
+    return jdbcTemplate.query(sql, (rs, rowNum) -> new UpDown15mAssetTimingQuantiles(
+        rs.getString(1),
+        rs.getLong(2),
+        rs.getLong(3),
+        rs.getLong(4),
+        rs.getLong(5),
+        rs.getLong(6),
+        rs.getLong(7),
+        rs.getDouble(8)
+    ), username);
+  }
+
+  @Override
+  public List<UpDown15mOutcomeTimingQuantiles> upDown15mTimingQuantilesByOutcome(String username) {
+    String sql = """
+        WITH
+          toUInt32OrZero(arrayElement(splitByChar('-', market_slug), -1)) AS market_start_epoch,
+          dateDiff('second', ts, toDateTime(market_start_epoch + 900)) AS seconds_to_end
+        SELECT
+          outcome,
+          count() AS trades,
+          min(seconds_to_end) AS min_seconds_to_end,
+          quantileExact(0.10)(seconds_to_end) AS p10_seconds_to_end,
+          quantileExact(0.50)(seconds_to_end) AS p50_seconds_to_end,
+          quantileExact(0.90)(seconds_to_end) AS p90_seconds_to_end,
+          max(seconds_to_end) AS max_seconds_to_end,
+          avg(seconds_to_end) AS avg_seconds_to_end
+        FROM user_trades_dedup
+        WHERE username = ?
+          AND position(market_slug, 'updown-15m-') > 0
+          AND market_start_epoch > 0
+          AND seconds_to_end BETWEEN -60 AND 900
+        GROUP BY outcome
+        ORDER BY trades DESC
+        """;
+    return jdbcTemplate.query(sql, (rs, rowNum) -> new UpDown15mOutcomeTimingQuantiles(
+        rs.getString(1),
+        rs.getLong(2),
+        rs.getLong(3),
+        rs.getLong(4),
+        rs.getLong(5),
+        rs.getLong(6),
+        rs.getLong(7),
+        rs.getDouble(8)
+    ), username);
+  }
+
+  @Override
+  public List<UpDown15mMarketTimingQuantiles> upDown15mTimingQuantilesByMarket(String username, int limit) {
+    int safeLimit = Math.max(1, Math.min(200, limit));
+    String sql = """
+        WITH
+          toUInt32OrZero(arrayElement(splitByChar('-', market_slug), -1)) AS market_start_epoch,
+          dateDiff('second', ts, toDateTime(market_start_epoch + 900)) AS seconds_to_end
+        SELECT
+          market_slug,
+          any(title) AS title,
+          count() AS trades,
+          min(seconds_to_end) AS min_seconds_to_end,
+          quantileExact(0.10)(seconds_to_end) AS p10_seconds_to_end,
+          quantileExact(0.50)(seconds_to_end) AS p50_seconds_to_end,
+          quantileExact(0.90)(seconds_to_end) AS p90_seconds_to_end,
+          max(seconds_to_end) AS max_seconds_to_end,
+          avg(seconds_to_end) AS avg_seconds_to_end
+        FROM user_trades_dedup
+        WHERE username = ?
+          AND position(market_slug, 'updown-15m-') > 0
+          AND market_start_epoch > 0
+          AND seconds_to_end BETWEEN -60 AND 900
+        GROUP BY market_slug
+        ORDER BY trades DESC
+        LIMIT %d
+        """.formatted(safeLimit);
+    return jdbcTemplate.query(sql, (rs, rowNum) -> new UpDown15mMarketTimingQuantiles(
+        rs.getString(1),
+        rs.getString(2),
+        rs.getLong(3),
+        rs.getLong(4),
+        rs.getLong(5),
+        rs.getLong(6),
+        rs.getLong(7),
+        rs.getLong(8),
+        rs.getDouble(9)
+    ), username);
+  }
+
+  @Override
+  public List<UpDown15mDailyAssetTiming> upDown15mDailyTimingByAsset(String username) {
+    String sql = """
+        WITH
+          toUInt32OrZero(arrayElement(splitByChar('-', market_slug), -1)) AS market_start_epoch,
+          dateDiff('second', ts, toDateTime(market_start_epoch + 900)) AS seconds_to_end,
+          upper(arrayElement(splitByChar('-', market_slug), 1)) AS asset,
+          toDate(ts) AS day
+        SELECT
+          day,
+          asset,
+          count() AS trades,
+          quantileExact(0.50)(seconds_to_end) AS p50_seconds_to_end,
+          avg(seconds_to_end) AS avg_seconds_to_end
+        FROM user_trades_dedup
+        WHERE username = ?
+          AND position(market_slug, 'updown-15m-') > 0
+          AND market_start_epoch > 0
+          AND asset != ''
+          AND seconds_to_end BETWEEN 0 AND 900
+        GROUP BY day, asset
+        ORDER BY day ASC, asset ASC
+        """;
+    return jdbcTemplate.query(sql, (rs, rowNum) -> new UpDown15mDailyAssetTiming(
+        mapLocalDate(rs, 1),
+        rs.getString(2),
+        rs.getLong(3),
+        rs.getLong(4),
+        rs.getDouble(5)
+    ), username);
+  }
+
+  @Override
+  public ExecutionQualityReport executionQualityReport(String username) {
+    String sql = """
+        WITH
+          (tob_captured_at IS NOT NULL AND best_bid_price > 0 AND best_ask_price > 0 AND mid > 0 AND spread > 0) AS tob_known,
+          dateDiff('millisecond', ts, tob_captured_at) AS tob_lag_millis,
+          (mid - price) AS buy_edge_vs_mid,
+          (price - mid) AS sell_edge_vs_mid,
+          (2 * abs(price - mid)) AS effective_spread,
+          if(spread > 0, (2 * abs(price - mid)) / spread, CAST(NULL, 'Nullable(Float64)')) AS effective_spread_ratio,
+          (side = 'BUY' AND price >= best_ask_price - ?) AS buy_taker_like_flag,
+          (side = 'BUY' AND price <= best_bid_price + ?) AS buy_maker_like_flag,
+          (side = 'BUY' AND price > best_bid_price + ? AND price < best_ask_price - ?) AS buy_inside_flag,
+          (side = 'SELL' AND price <= best_bid_price + ?) AS sell_taker_like_flag,
+          (side = 'SELL' AND price >= best_ask_price - ?) AS sell_maker_like_flag,
+          (side = 'SELL' AND price > best_bid_price + ? AND price < best_ask_price - ?) AS sell_inside_flag
+        SELECT
+          count() AS trades,
+          countIf(tob_known) AS trades_with_tob,
+          if(count() > 0, countIf(tob_known) / count(), 0) AS tob_coverage,
+          avgIf(spread, tob_known) AS spread_avg,
+          quantileTDigestIf(0.10)(spread, tob_known) AS spread_p10,
+          quantileTDigestIf(0.50)(spread, tob_known) AS spread_p50,
+          quantileTDigestIf(0.90)(spread, tob_known) AS spread_p90,
+          minIf(spread, tob_known) AS spread_min,
+          maxIf(spread, tob_known) AS spread_max,
+          avgIf(tob_lag_millis, tob_known) AS tob_lag_avg,
+          quantileTDigestIf(0.10)(tob_lag_millis, tob_known) AS tob_lag_p10,
+          quantileTDigestIf(0.50)(tob_lag_millis, tob_known) AS tob_lag_p50,
+          quantileTDigestIf(0.90)(tob_lag_millis, tob_known) AS tob_lag_p90,
+          minIf(tob_lag_millis, tob_known) AS tob_lag_min,
+          maxIf(tob_lag_millis, tob_known) AS tob_lag_max,
+          countIf(tob_known AND side = 'BUY') AS buy_trades_with_tob,
+          countIf(tob_known AND buy_taker_like_flag) AS buy_taker_like,
+          countIf(tob_known AND buy_maker_like_flag) AS buy_maker_like,
+          countIf(tob_known AND buy_inside_flag) AS buy_inside,
+          avgIf(buy_edge_vs_mid, tob_known AND side = 'BUY') AS buy_edge_avg,
+          quantileTDigestIf(0.10)(buy_edge_vs_mid, tob_known AND side = 'BUY') AS buy_edge_p10,
+          quantileTDigestIf(0.50)(buy_edge_vs_mid, tob_known AND side = 'BUY') AS buy_edge_p50,
+          quantileTDigestIf(0.90)(buy_edge_vs_mid, tob_known AND side = 'BUY') AS buy_edge_p90,
+          minIf(buy_edge_vs_mid, tob_known AND side = 'BUY') AS buy_edge_min,
+          maxIf(buy_edge_vs_mid, tob_known AND side = 'BUY') AS buy_edge_max,
+          avgIf(effective_spread, tob_known AND side = 'BUY') AS buy_eff_spread_avg,
+          quantileTDigestIf(0.10)(effective_spread, tob_known AND side = 'BUY') AS buy_eff_spread_p10,
+          quantileTDigestIf(0.50)(effective_spread, tob_known AND side = 'BUY') AS buy_eff_spread_p50,
+          quantileTDigestIf(0.90)(effective_spread, tob_known AND side = 'BUY') AS buy_eff_spread_p90,
+          minIf(effective_spread, tob_known AND side = 'BUY') AS buy_eff_spread_min,
+          maxIf(effective_spread, tob_known AND side = 'BUY') AS buy_eff_spread_max,
+          avgIf(effective_spread_ratio, tob_known AND side = 'BUY' AND effective_spread_ratio IS NOT NULL) AS buy_eff_ratio_avg,
+          quantileTDigestIf(0.10)(effective_spread_ratio, tob_known AND side = 'BUY' AND effective_spread_ratio IS NOT NULL) AS buy_eff_ratio_p10,
+          quantileTDigestIf(0.50)(effective_spread_ratio, tob_known AND side = 'BUY' AND effective_spread_ratio IS NOT NULL) AS buy_eff_ratio_p50,
+          quantileTDigestIf(0.90)(effective_spread_ratio, tob_known AND side = 'BUY' AND effective_spread_ratio IS NOT NULL) AS buy_eff_ratio_p90,
+          minIf(effective_spread_ratio, tob_known AND side = 'BUY' AND effective_spread_ratio IS NOT NULL) AS buy_eff_ratio_min,
+          maxIf(effective_spread_ratio, tob_known AND side = 'BUY' AND effective_spread_ratio IS NOT NULL) AS buy_eff_ratio_max,
+          countIf(tob_known AND side = 'SELL') AS sell_trades_with_tob,
+          countIf(tob_known AND sell_taker_like_flag) AS sell_taker_like,
+          countIf(tob_known AND sell_maker_like_flag) AS sell_maker_like,
+          countIf(tob_known AND sell_inside_flag) AS sell_inside,
+          avgIf(sell_edge_vs_mid, tob_known AND side = 'SELL') AS sell_edge_avg,
+          quantileTDigestIf(0.10)(sell_edge_vs_mid, tob_known AND side = 'SELL') AS sell_edge_p10,
+          quantileTDigestIf(0.50)(sell_edge_vs_mid, tob_known AND side = 'SELL') AS sell_edge_p50,
+          quantileTDigestIf(0.90)(sell_edge_vs_mid, tob_known AND side = 'SELL') AS sell_edge_p90,
+          minIf(sell_edge_vs_mid, tob_known AND side = 'SELL') AS sell_edge_min,
+          maxIf(sell_edge_vs_mid, tob_known AND side = 'SELL') AS sell_edge_max,
+          avgIf(effective_spread, tob_known AND side = 'SELL') AS sell_eff_spread_avg,
+          quantileTDigestIf(0.10)(effective_spread, tob_known AND side = 'SELL') AS sell_eff_spread_p10,
+          quantileTDigestIf(0.50)(effective_spread, tob_known AND side = 'SELL') AS sell_eff_spread_p50,
+          quantileTDigestIf(0.90)(effective_spread, tob_known AND side = 'SELL') AS sell_eff_spread_p90,
+          minIf(effective_spread, tob_known AND side = 'SELL') AS sell_eff_spread_min,
+          maxIf(effective_spread, tob_known AND side = 'SELL') AS sell_eff_spread_max,
+          avgIf(effective_spread_ratio, tob_known AND side = 'SELL' AND effective_spread_ratio IS NOT NULL) AS sell_eff_ratio_avg,
+          quantileTDigestIf(0.10)(effective_spread_ratio, tob_known AND side = 'SELL' AND effective_spread_ratio IS NOT NULL) AS sell_eff_ratio_p10,
+          quantileTDigestIf(0.50)(effective_spread_ratio, tob_known AND side = 'SELL' AND effective_spread_ratio IS NOT NULL) AS sell_eff_ratio_p50,
+          quantileTDigestIf(0.90)(effective_spread_ratio, tob_known AND side = 'SELL' AND effective_spread_ratio IS NOT NULL) AS sell_eff_ratio_p90,
+          minIf(effective_spread_ratio, tob_known AND side = 'SELL' AND effective_spread_ratio IS NOT NULL) AS sell_eff_ratio_min,
+          maxIf(effective_spread_ratio, tob_known AND side = 'SELL' AND effective_spread_ratio IS NOT NULL) AS sell_eff_ratio_max
+        FROM user_trade_enriched
+        WHERE username = ?
+        """;
+
+    return jdbcTemplate.query(sql, rs -> {
+      if (!rs.next()) {
+        return new ExecutionQualityReport(
+            0,
+            0,
+            0,
+            emptyDistribution(),
+            emptyDistribution(),
+            emptySideExecutionReport(),
+            emptySideExecutionReport()
+        );
+      }
+
+      long trades = rs.getLong("trades");
+      long tradesWithTob = rs.getLong("trades_with_tob");
+      double tobCoverage = rs.getDouble("tob_coverage");
+
+      DistributionStats spread = new DistributionStats(
+          rs.getDouble("spread_avg"),
+          rs.getDouble("spread_p10"),
+          rs.getDouble("spread_p50"),
+          rs.getDouble("spread_p90"),
+          rs.getDouble("spread_min"),
+          rs.getDouble("spread_max")
+      );
+
+      DistributionStats tobLagMillis = new DistributionStats(
+          rs.getDouble("tob_lag_avg"),
+          rs.getDouble("tob_lag_p10"),
+          rs.getDouble("tob_lag_p50"),
+          rs.getDouble("tob_lag_p90"),
+          rs.getDouble("tob_lag_min"),
+          rs.getDouble("tob_lag_max")
+      );
+
+      SideExecutionReport buy = new SideExecutionReport(
+          rs.getLong("buy_trades_with_tob"),
+          rs.getLong("buy_taker_like"),
+          rs.getLong("buy_maker_like"),
+          rs.getLong("buy_inside"),
+          new DistributionStats(
+              rs.getDouble("buy_edge_avg"),
+              rs.getDouble("buy_edge_p10"),
+              rs.getDouble("buy_edge_p50"),
+              rs.getDouble("buy_edge_p90"),
+              rs.getDouble("buy_edge_min"),
+              rs.getDouble("buy_edge_max")
+          ),
+          new DistributionStats(
+              rs.getDouble("buy_eff_spread_avg"),
+              rs.getDouble("buy_eff_spread_p10"),
+              rs.getDouble("buy_eff_spread_p50"),
+              rs.getDouble("buy_eff_spread_p90"),
+              rs.getDouble("buy_eff_spread_min"),
+              rs.getDouble("buy_eff_spread_max")
+          ),
+          new DistributionStats(
+              rs.getDouble("buy_eff_ratio_avg"),
+              rs.getDouble("buy_eff_ratio_p10"),
+              rs.getDouble("buy_eff_ratio_p50"),
+              rs.getDouble("buy_eff_ratio_p90"),
+              rs.getDouble("buy_eff_ratio_min"),
+              rs.getDouble("buy_eff_ratio_max")
+          )
+      );
+
+      SideExecutionReport sell = new SideExecutionReport(
+          rs.getLong("sell_trades_with_tob"),
+          rs.getLong("sell_taker_like"),
+          rs.getLong("sell_maker_like"),
+          rs.getLong("sell_inside"),
+          new DistributionStats(
+              rs.getDouble("sell_edge_avg"),
+              rs.getDouble("sell_edge_p10"),
+              rs.getDouble("sell_edge_p50"),
+              rs.getDouble("sell_edge_p90"),
+              rs.getDouble("sell_edge_min"),
+              rs.getDouble("sell_edge_max")
+          ),
+          new DistributionStats(
+              rs.getDouble("sell_eff_spread_avg"),
+              rs.getDouble("sell_eff_spread_p10"),
+              rs.getDouble("sell_eff_spread_p50"),
+              rs.getDouble("sell_eff_spread_p90"),
+              rs.getDouble("sell_eff_spread_min"),
+              rs.getDouble("sell_eff_spread_max")
+          ),
+          new DistributionStats(
+              rs.getDouble("sell_eff_ratio_avg"),
+              rs.getDouble("sell_eff_ratio_p10"),
+              rs.getDouble("sell_eff_ratio_p50"),
+              rs.getDouble("sell_eff_ratio_p90"),
+              rs.getDouble("sell_eff_ratio_min"),
+              rs.getDouble("sell_eff_ratio_max")
+          )
+      );
+
+      return new ExecutionQualityReport(trades, tradesWithTob, tobCoverage, spread, tobLagMillis, buy, sell);
+    }, EPS, EPS, EPS, EPS, EPS, EPS, EPS, EPS, username);
+  }
+
+  @Override
+  public List<ExecutionTypePnl> realizedPnlByExecutionType(String username) {
+    String sql = """
+        SELECT
+          side,
+          exec_type,
+          resolved_trades,
+          realized_pnl_usd,
+          if(resolved_trades > 0, realized_pnl_usd / resolved_trades, 0) AS avg_pnl_per_trade,
+          if(resolved_trades > 0, wins / resolved_trades, 0) AS win_rate
+        FROM (
+          WITH
+            (tob_captured_at IS NOT NULL AND best_bid_price > 0 AND best_ask_price > 0) AS tob_known,
+            multiIf(
+              side = 'BUY' AND price >= best_ask_price - ?, 'TAKER_LIKE',
+              side = 'BUY' AND price <= best_bid_price + ?, 'MAKER_LIKE',
+              side = 'SELL' AND price <= best_bid_price + ?, 'TAKER_LIKE',
+              side = 'SELL' AND price >= best_ask_price - ?, 'MAKER_LIKE',
+              price > best_bid_price + ? AND price < best_ask_price - ?, 'INSIDE',
+              'OUTSIDE'
+            ) AS exec_type
+          SELECT
+            side,
+            exec_type,
+            countIf(realized_pnl IS NOT NULL) AS resolved_trades,
+            sumIf(realized_pnl, realized_pnl IS NOT NULL) AS realized_pnl_usd,
+            countIf(realized_pnl > 0) AS wins
+          FROM user_trade_enriched
+          WHERE username = ?
+            AND tob_known
+          GROUP BY side, exec_type
+        )
+        WHERE resolved_trades > 0
+        ORDER BY realized_pnl_usd DESC
+        """;
+    return jdbcTemplate.query(sql, (rs, rowNum) -> new ExecutionTypePnl(
+        rs.getString(1),
+        rs.getString(2),
+        rs.getLong(3),
+        rs.getDouble(4),
+        rs.getDouble(5),
+        rs.getDouble(6)
+    ), EPS, EPS, EPS, EPS, EPS, EPS, username);
+  }
+
+  @Override
+  public List<SeriesPnl> realizedPnlBySeries(String username) {
+    String sql = """
+        SELECT
+          series,
+          resolved_trades,
+          realized_pnl_usd,
+          if(resolved_trades > 0, realized_pnl_usd / resolved_trades, 0) AS avg_pnl_per_trade,
+          if(resolved_trades > 0, wins / resolved_trades, 0) AS win_rate,
+          notional_usd
+        FROM (
+          WITH multiIf(
+            position(market_slug, 'updown-15m-') > 0, 'updown-15m',
+            position(lower(title), 'up or down') > 0, 'up-or-down',
+            position(lower(market_slug), 'updown') > 0, 'updown',
+            'other'
+          ) AS series
+          SELECT
+            series,
+            countIf(realized_pnl IS NOT NULL) AS resolved_trades,
+            sumIf(realized_pnl, realized_pnl IS NOT NULL) AS realized_pnl_usd,
+            countIf(realized_pnl > 0) AS wins,
+            sum(size * price) AS notional_usd
+          FROM user_trade_enriched
+          WHERE username = ?
+          GROUP BY series
+        )
+        ORDER BY realized_pnl_usd DESC
+        """;
+    return jdbcTemplate.query(sql, (rs, rowNum) -> new SeriesPnl(
+        rs.getString(1),
+        rs.getLong(2),
+        rs.getDouble(3),
+        rs.getDouble(4),
+        rs.getDouble(5),
+        rs.getDouble(6)
+    ), username);
+  }
+
   private static UserTradeStats mapStats(ResultSet rs) {
     try {
       long trades = rs.getLong(1);
@@ -551,5 +1098,25 @@ public class JdbcUserTradeAnalyticsRepository implements UserTradeAnalyticsRepos
     } catch (Exception e) {
       throw new RuntimeException("Failed to map trade stats row", e);
     }
+  }
+
+  private static LocalDate mapLocalDate(ResultSet rs, int columnIndex) {
+    try {
+      Date date = rs.getDate(columnIndex);
+      if (date == null) {
+        return null;
+      }
+      return date.toLocalDate();
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to map date column index=" + columnIndex, e);
+    }
+  }
+
+  private static DistributionStats emptyDistribution() {
+    return new DistributionStats(0, 0, 0, 0, 0, 0);
+  }
+
+  private static SideExecutionReport emptySideExecutionReport() {
+    return new SideExecutionReport(0, 0, 0, 0, emptyDistribution(), emptyDistribution(), emptyDistribution());
   }
 }

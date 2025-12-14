@@ -66,12 +66,33 @@ public class UserTradeAnalyticsController {
     return repository.executionQuality(username);
   }
 
+  @GetMapping("/execution/report")
+  public UserTradeAnalyticsRepository.ExecutionQualityReport executionReport(
+      @PathVariable("username") String username
+  ) {
+    return repository.executionQualityReport(username);
+  }
+
   @GetMapping("/pnl/markets")
   public List<UserTradeAnalyticsRepository.MarketPnl> pnlByMarket(
       @PathVariable("username") String username,
       @RequestParam(name = "limit", required = false, defaultValue = "50") int limit
   ) {
     return repository.realizedPnlByMarket(username, limit);
+  }
+
+  @GetMapping("/pnl/execution")
+  public List<UserTradeAnalyticsRepository.ExecutionTypePnl> pnlByExecutionType(
+      @PathVariable("username") String username
+  ) {
+    return repository.realizedPnlByExecutionType(username);
+  }
+
+  @GetMapping("/pnl/series")
+  public List<UserTradeAnalyticsRepository.SeriesPnl> pnlBySeries(
+      @PathVariable("username") String username
+  ) {
+    return repository.realizedPnlBySeries(username);
   }
 
   @GetMapping("/pnl/timing/updown-15m")
@@ -102,6 +123,56 @@ public class UserTradeAnalyticsController {
       @PathVariable("username") String username
   ) {
     return repository.upDown15mAssetActivity(username);
+  }
+
+  @GetMapping("/selection/summary")
+  public UserTradeAnalyticsRepository.MarketSelectionSummary selectionSummary(
+      @PathVariable("username") String username
+  ) {
+    return repository.selectionSummary(username);
+  }
+
+  @GetMapping("/selection/series")
+  public List<UserTradeAnalyticsRepository.SeriesActivity> selectionSeries(
+      @PathVariable("username") String username
+  ) {
+    return repository.seriesActivity(username);
+  }
+
+  @GetMapping("/churn")
+  public UserTradeAnalyticsRepository.MarketChurnStats churn(
+      @PathVariable("username") String username
+  ) {
+    return repository.marketChurn(username);
+  }
+
+  @GetMapping("/timing/updown-15m/assets")
+  public List<UserTradeAnalyticsRepository.UpDown15mAssetTimingQuantiles> upDown15mTimingByAsset(
+      @PathVariable("username") String username
+  ) {
+    return repository.upDown15mTimingQuantilesByAsset(username);
+  }
+
+  @GetMapping("/timing/updown-15m/outcomes")
+  public List<UserTradeAnalyticsRepository.UpDown15mOutcomeTimingQuantiles> upDown15mTimingByOutcome(
+      @PathVariable("username") String username
+  ) {
+    return repository.upDown15mTimingQuantilesByOutcome(username);
+  }
+
+  @GetMapping("/timing/updown-15m/markets")
+  public List<UserTradeAnalyticsRepository.UpDown15mMarketTimingQuantiles> upDown15mTimingByMarket(
+      @PathVariable("username") String username,
+      @RequestParam(name = "limit", required = false, defaultValue = "50") int limit
+  ) {
+    return repository.upDown15mTimingQuantilesByMarket(username, limit);
+  }
+
+  @GetMapping("/timing/updown-15m/daily-assets")
+  public List<UserTradeAnalyticsRepository.UpDown15mDailyAssetTiming> upDown15mTimingDailyAssets(
+      @PathVariable("username") String username
+  ) {
+    return repository.upDown15mDailyTimingByAsset(username);
   }
 
   public record UserTradeReport(
