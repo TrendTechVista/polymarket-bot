@@ -249,7 +249,7 @@ public record HftProperties(
   }
 
   private static Gabagool defaultGabagool() {
-    return new Gabagool(false, null, null, null, null, null, null, null);
+    return new Gabagool(false, null, null, null, null, null, null, null, null, null, null, null);
   }
 
   /**
@@ -261,9 +261,30 @@ public record HftProperties(
       @NotNull @Min(50) Long refreshMillis,
       @NotNull @Min(60) Long minSecondsToEnd,
       @NotNull @Min(120) Long maxSecondsToEnd,
+      /**
+       * Target order size in USDC notional (approx. {@code entryPrice * shares} for BUY orders).
+       */
       @NotNull @PositiveOrZero BigDecimal quoteSize,
+      /**
+       * Optional bankroll-based sizing target (0..1). When > 0 and {@code bankrollUsd > 0}, the strategy uses
+       * {@code bankrollUsd * quoteSizeBankrollFraction} as the base order notional instead of {@code quoteSize}.
+       */
+      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double quoteSizeBankrollFraction,
       @NotNull @PositiveOrZero Double imbalanceThreshold,
       @NotNull @Min(0) Integer improveTicks,
+      /**
+       * Optional bankroll (USDC) to enable fractional sizing caps.
+       * When 0, bankroll-based caps are disabled.
+       */
+      @NotNull @PositiveOrZero BigDecimal bankrollUsd,
+      /**
+       * Optional cap per order as a fraction of {@code bankrollUsd} (0..1). When 0, disabled.
+       */
+      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double maxOrderBankrollFraction,
+      /**
+       * Optional cap for total exposure as a fraction of {@code bankrollUsd} (0..1). When 0, disabled.
+       */
+      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double maxTotalBankrollFraction,
       @Valid List<GabagoolMarket> markets
   ) {
     public Gabagool {
@@ -279,11 +300,23 @@ public record HftProperties(
       if (quoteSize == null) {
         quoteSize = BigDecimal.valueOf(10);
       }
+      if (quoteSizeBankrollFraction == null) {
+        quoteSizeBankrollFraction = 0.0;
+      }
       if (imbalanceThreshold == null) {
         imbalanceThreshold = 0.05;
       }
       if (improveTicks == null) {
         improveTicks = 1;
+      }
+      if (bankrollUsd == null) {
+        bankrollUsd = BigDecimal.ZERO;
+      }
+      if (maxOrderBankrollFraction == null) {
+        maxOrderBankrollFraction = 0.0;
+      }
+      if (maxTotalBankrollFraction == null) {
+        maxTotalBankrollFraction = 0.0;
       }
       markets = sanitizeGabagoolMarkets(markets);
     }

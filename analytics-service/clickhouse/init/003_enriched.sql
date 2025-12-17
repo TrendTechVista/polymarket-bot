@@ -51,9 +51,9 @@ GROUP BY
 CREATE VIEW IF NOT EXISTS polybot.clob_tob_by_trade AS
 SELECT
   trade_key,
+  token_id,
   max(captured_at) AS tob_captured_at,
   argMax(market_slug, captured_at) AS market_slug,
-  argMax(token_id, captured_at) AS token_id,
   argMax(outcome, captured_at) AS outcome,
   argMax(best_bid_price, captured_at) AS best_bid_price,
   argMax(best_bid_size, captured_at) AS best_bid_size,
@@ -66,7 +66,7 @@ SELECT
   argMax(cached, captured_at) AS cached,
   argMax(cache_age_millis, captured_at) AS cache_age_millis
 FROM polybot.clob_tob
-GROUP BY trade_key;
+GROUP BY trade_key, token_id;
 
 CREATE OR REPLACE VIEW polybot.user_trade_enriched AS
 WITH
@@ -132,5 +132,5 @@ SELECT
     CAST(NULL, 'Nullable(Float64)')
   ) AS realized_pnl
 FROM polybot.user_trades_dedup u
-LEFT JOIN polybot.clob_tob_by_trade t ON t.trade_key = u.event_key
+LEFT JOIN polybot.clob_tob_by_trade t ON t.trade_key = u.event_key AND t.token_id = u.token_id
 LEFT JOIN polybot.gamma_markets_latest g ON g.slug = u.market_slug;

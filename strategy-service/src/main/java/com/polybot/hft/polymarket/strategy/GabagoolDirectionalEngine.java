@@ -24,6 +24,7 @@ import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 /**
  * Gabagool22-style directional strategy for Up/Down binary markets.
@@ -90,8 +91,15 @@ public class GabagoolDirectionalEngine {
     @PostConstruct
     void startIfEnabled() {
         GabagoolConfig cfg = getConfig();
-        log.info("gabagool-directional config loaded (enabled={}, entryWindowMinutes={}-{}, quoteSize={})",
-                cfg.enabled(), cfg.minSecondsToEnd() / 60, cfg.maxSecondsToEnd() / 60, cfg.quoteSize());
+        log.info("gabagool-directional config loaded (enabled={}, entryWindowMinutes={}-{}, quoteSizeUsd={}, quoteSizeFrac={}, bankrollUsd={}, maxOrderFrac={}, maxTotalFrac={})",
+                cfg.enabled(),
+                cfg.minSecondsToEnd() / 60,
+                cfg.maxSecondsToEnd() / 60,
+                cfg.quoteSize(),
+                cfg.quoteSizeBankrollFraction(),
+                cfg.bankrollUsd(),
+                cfg.maxOrderBankrollFraction(),
+                cfg.maxTotalBankrollFraction());
 
         if (!cfg.enabled()) {
             log.info("gabagool-directional strategy is disabled");
@@ -178,6 +186,9 @@ public class GabagoolDirectionalEngine {
         if (upBook == null || downBook == null) {
             return;
         }
+        if (isStale(upBook) || isStale(downBook)) {
+            return;
+        }
 
         // Calculate signals
         SignalResult signal = calculateSignal(upBook, downBook, cfg);
@@ -202,8 +213,19 @@ public class GabagoolDirectionalEngine {
             return;
         }
 
+        BigDecimal notionalUsd = calculateNotionalUsd(cfg);
+        if (notionalUsd == null) {
+            return;
+        }
+
+        // Position sizing: config is in USDC notional; convert to shares/contracts.
+        BigDecimal shares = calculateSharesFromNotional(notionalUsd, entryPrice);
+        if (shares == null) {
+            return;
+        }
+
         // Place the order
-        placeDirectionalOrder(market, tokenId, signal.direction(), entryPrice, cfg.quoteSize(), secondsToEnd);
+        placeDirectionalOrder(market, tokenId, signal.direction(), entryPrice, shares, secondsToEnd);
     }
 
     /**
@@ -276,13 +298,18 @@ public class GabagoolDirectionalEngine {
         }
 
         BigDecimal mid = bestBid.add(bestAsk).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+        BigDecimal spread = bestAsk.subtract(bestBid);
 
-        // Place order at bid + 1 tick (improve the bid slightly)
-        // This makes us a maker, not a taker
-        BigDecimal improvedBid = bestBid.add(tickSize.multiply(BigDecimal.valueOf(cfg.improveTicks())));
-
-        // Don't go above mid
-        BigDecimal entryPrice = improvedBid.min(mid);
+        BigDecimal entryPrice;
+        if (spread.compareTo(BigDecimal.valueOf(0.20)) >= 0) {
+            // When the book is extremely wide (often 0.01/0.99 in these markets), quoting off the
+            // displayed bestBid yields orders that never fill. In that case, quote near mid.
+            entryPrice = mid.subtract(tickSize.multiply(BigDecimal.valueOf(cfg.improveTicks())));
+        } else {
+            // Place order at bid + N ticks (improve the bid slightly) but never above mid.
+            BigDecimal improvedBid = bestBid.add(tickSize.multiply(BigDecimal.valueOf(cfg.improveTicks())));
+            entryPrice = improvedBid.min(mid);
+        }
 
         // Round to tick
         entryPrice = roundToTick(entryPrice, tickSize, RoundingMode.DOWN);
@@ -413,6 +440,17 @@ public class GabagoolDirectionalEngine {
 
             activeMarkets.set(markets);
 
+            // Ensure the market WS is subscribed to the active token ids.
+            List<String> assetIds = markets.stream()
+                    .flatMap(m -> Stream.of(m.upTokenId(), m.downTokenId()))
+                    .filter(Objects::nonNull)
+                    .filter(s -> !s.isBlank())
+                    .distinct()
+                    .toList();
+            if (!assetIds.isEmpty()) {
+                marketWs.subscribeAssets(assetIds);
+            }
+
             if (!markets.isEmpty()) {
                 log.debug("GABAGOOL: Tracking {} markets ({} discovered, {} configured)",
                         markets.size(), discovered.size(), cfg.markets() != null ? cfg.markets().size() : 0);
@@ -453,8 +491,12 @@ public class GabagoolDirectionalEngine {
                 cfg.minSecondsToEnd(),
                 cfg.maxSecondsToEnd(),
                 cfg.quoteSize(),
+                cfg.quoteSizeBankrollFraction(),
                 cfg.imbalanceThreshold(),
                 cfg.improveTicks(),
+                cfg.bankrollUsd(),
+                cfg.maxOrderBankrollFraction(),
+                cfg.maxTotalBankrollFraction(),
                 marketConfigs
         );
     }
@@ -470,11 +512,21 @@ public class GabagoolDirectionalEngine {
         if (book == null || book.bestBid() == null || book.bestAsk() == null) {
             return null;
         }
-        // TopOfBook doesn't have size info, so we use price position as a proxy
-        // Higher mid price = more bullish sentiment
+
+        BigDecimal bidSize = book.bestBidSize();
+        BigDecimal askSize = book.bestAskSize();
+        if (bidSize != null && askSize != null) {
+            BigDecimal total = bidSize.add(askSize);
+            if (total.signum() == 0) {
+                return 0.0;
+            }
+            return bidSize.subtract(askSize)
+                    .divide(total, 8, RoundingMode.HALF_UP)
+                    .doubleValue();
+        }
+
+        // Fallback proxy (if the WS event doesn't include sizes).
         BigDecimal mid = book.bestBid().add(book.bestAsk()).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
-        // Normalize: prices are 0-1, convert to -1 to +1 range
-        // 0.5 mid = neutral (0), 0.7 mid = bullish (+0.4), 0.3 mid = bearish (-0.4)
         return mid.subtract(BigDecimal.valueOf(0.5)).doubleValue() * 2;
     }
 
@@ -503,12 +555,93 @@ public class GabagoolDirectionalEngine {
                 .anyMatch(o -> o.tokenId().equals(market.upTokenId()) || o.tokenId().equals(market.downTokenId()));
     }
 
+    private boolean isStale(TopOfBook tob) {
+        if (tob == null || tob.updatedAt() == null) {
+            return true;
+        }
+        Duration age = Duration.between(tob.updatedAt(), clock.instant());
+        return age.toMillis() > 2_000;
+    }
+
     private static BigDecimal roundToTick(BigDecimal value, BigDecimal tickSize, RoundingMode mode) {
         if (tickSize.compareTo(BigDecimal.ZERO) <= 0) {
             return value;
         }
         BigDecimal ticks = value.divide(tickSize, 0, mode);
         return ticks.multiply(tickSize);
+    }
+
+    private static BigDecimal calculateSharesFromNotional(BigDecimal notionalUsd, BigDecimal price) {
+        if (notionalUsd == null || notionalUsd.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        // Use 2 decimals to match Polymarket sizing constraints (see PolymarketOrderBuilder).
+        BigDecimal shares = notionalUsd.divide(price, 2, RoundingMode.DOWN);
+        if (shares.compareTo(BigDecimal.valueOf(0.01)) < 0) {
+            return null;
+        }
+        return shares;
+    }
+
+    private BigDecimal calculateNotionalUsd(GabagoolConfig cfg) {
+        if (cfg == null) {
+            return null;
+        }
+
+        BigDecimal maxNotionalUsd = properties.risk().maxOrderNotionalUsd();
+        BigDecimal bankrollUsd = cfg.bankrollUsd();
+        BigDecimal notional;
+        if (bankrollUsd != null && bankrollUsd.compareTo(BigDecimal.ZERO) > 0 && cfg.quoteSizeBankrollFraction() > 0) {
+            notional = bankrollUsd.multiply(BigDecimal.valueOf(cfg.quoteSizeBankrollFraction()));
+        } else {
+            notional = cfg.quoteSize();
+        }
+
+        if (notional == null || notional.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+
+        if (maxNotionalUsd != null && maxNotionalUsd.compareTo(BigDecimal.ZERO) > 0) {
+            notional = notional.min(maxNotionalUsd);
+        }
+
+        if (bankrollUsd != null && bankrollUsd.compareTo(BigDecimal.ZERO) > 0) {
+            if (cfg.maxOrderBankrollFraction() > 0) {
+                BigDecimal perOrderCap = bankrollUsd.multiply(BigDecimal.valueOf(cfg.maxOrderBankrollFraction()));
+                notional = notional.min(perOrderCap);
+            }
+            if (cfg.maxTotalBankrollFraction() > 0) {
+                BigDecimal totalCap = bankrollUsd.multiply(BigDecimal.valueOf(cfg.maxTotalBankrollFraction()));
+                BigDecimal open = currentExposureNotionalUsd();
+                BigDecimal remaining = totalCap.subtract(open);
+                if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                    return null;
+                }
+                notional = notional.min(remaining);
+            }
+        }
+
+        return notional.compareTo(BigDecimal.ZERO) > 0 ? notional : null;
+    }
+
+    private BigDecimal currentExposureNotionalUsd() {
+        BigDecimal total = BigDecimal.ZERO;
+        for (OrderState o : pendingOrders.values()) {
+            if (o == null || o.price() == null || o.size() == null) {
+                continue;
+            }
+            total = total.add(o.price().multiply(o.size()));
+        }
+        for (PositionState p : positions.values()) {
+            if (p == null || p.entryPrice() == null || p.size() == null) {
+                continue;
+            }
+            total = total.add(p.entryPrice().multiply(p.size()));
+        }
+        return total;
     }
 
     private void safeCancel(String orderId) {
@@ -572,8 +705,12 @@ public class GabagoolDirectionalEngine {
             long minSecondsToEnd,
             long maxSecondsToEnd,
             BigDecimal quoteSize,
+            double quoteSizeBankrollFraction,
             double imbalanceThreshold,
             int improveTicks,
+            BigDecimal bankrollUsd,
+            double maxOrderBankrollFraction,
+            double maxTotalBankrollFraction,
             List<GabagoolMarketConfig> markets
     ) {}
 
@@ -622,4 +759,3 @@ public class GabagoolDirectionalEngine {
             Instant fetchedAt
     ) {}
 }
-

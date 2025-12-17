@@ -179,7 +179,8 @@ Config:
 - `hft.strategy.gabagool.enabled=true`
 - `hft.strategy.gabagool.min-seconds-to-end=600` (10 min)
 - `hft.strategy.gabagool.max-seconds-to-end=900` (15 min)
-- `hft.strategy.gabagool.quote-size=10` (USDC per trade)
+- `hft.strategy.gabagool.quote-size=10` (USDC notional per order; approx. `entryPrice * shares`)
+- Optional bankroll sizing: `hft.strategy.gabagool.bankroll-usd`, `hft.strategy.gabagool.quote-size-bankroll-fraction`, `hft.strategy.gabagool.max-order-bankroll-fraction`, `hft.strategy.gabagool.max-total-bankroll-fraction`
 
 ## Safety
 

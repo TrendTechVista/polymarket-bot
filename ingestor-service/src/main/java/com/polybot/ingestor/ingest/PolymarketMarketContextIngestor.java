@@ -93,7 +93,7 @@ public class PolymarketMarketContextIngestor {
     long maxAgeSeconds = properties.marketContext().onTradeContextMaxAgeSeconds();
     long ageSeconds = Math.max(0, (nowMillis - userTradeAt.toEpochMilli()) / 1000L);
     if (ageSeconds <= maxAgeSeconds) {
-      maybePublishClobTob(username, proxyAddress, userTradeKey, userTradeAt, userTrade, state, nowMillis);
+      maybePublishClobTobContext(username, proxyAddress, userTradeKey, userTradeAt, userTrade, state, nowMillis);
       maybeFetchAndPublishMarketTrades(slug, state, nowMillis);
     }
   }
@@ -164,17 +164,23 @@ public class PolymarketMarketContextIngestor {
 
     GammaMarket market;
     try {
-      state.lastGammaFetchAtMillis = nowMillis;
       market = fetchGammaMarket(state.slug);
       if (market == null) {
+        // Don't "lock out" the market for a full gammaMinInterval on transient failures.
+        // Allow a quick retry while still throttling attempts.
+        long retryMillis = Math.min(5_000L, minIntervalMillis);
+        state.lastGammaFetchAtMillis = nowMillis - minIntervalMillis + retryMillis;
         return;
       }
     } catch (Exception e) {
+      long retryMillis = Math.min(5_000L, minIntervalMillis);
+      state.lastGammaFetchAtMillis = nowMillis - minIntervalMillis + retryMillis;
       failures.incrementAndGet();
       log.debug("market-context gamma fetch failed slug={} error={}", state.slug, e.toString());
       return;
     }
 
+    state.lastGammaFetchAtMillis = nowMillis;
     state.gamma = market;
     String signature = gammaSignature(market);
     if (signature.equals(state.lastGammaSignature)) {
@@ -209,7 +215,11 @@ public class PolymarketMarketContextIngestor {
     }
   }
 
-  private void maybePublishClobTob(
+  /**
+   * Publishes a CLOB top-of-book snapshot for the traded token and, when Gamma market metadata is available,
+   * also snapshots other outcomes in the same market at the same trigger time.
+   */
+  private void maybePublishClobTobContext(
       String username,
       String proxyAddress,
       String userTradeKey,
@@ -218,7 +228,72 @@ public class PolymarketMarketContextIngestor {
       MarketState state,
       long nowMillis
   ) {
-    String tokenId = textOrNull(userTrade.path("asset"));
+    String tradedTokenId = textOrNull(userTrade.path("asset"));
+    if (tradedTokenId == null) {
+      return;
+    }
+
+    GammaMarket gamma = state.gamma;
+    List<String> tokenIds = gamma == null ? List.of() : gamma.clobTokenIds();
+    if (tokenIds != null && tokenIds.size() >= 2 && tokenIds.size() <= 4) {
+      for (String tokenId : tokenIds) {
+        if (tokenId == null || tokenId.isBlank()) {
+          continue;
+        }
+        String tokenOutcome = outcomeForToken(gamma, tokenId);
+        if ((tokenOutcome == null || tokenOutcome.isBlank()) && tokenId.equals(tradedTokenId)) {
+          tokenOutcome = textOrNull(userTrade.path("outcome"));
+        }
+        maybePublishClobTobForToken(username, proxyAddress, userTradeKey, userTradeAt, state.slug, tokenId, tokenOutcome, userTrade, state, nowMillis);
+      }
+      return;
+    }
+
+    // Fallback: only snapshot the traded token.
+    maybePublishClobTobForToken(
+        username,
+        proxyAddress,
+        userTradeKey,
+        userTradeAt,
+        state.slug,
+        tradedTokenId,
+        textOrNull(userTrade.path("outcome")),
+        userTrade,
+        state,
+        nowMillis
+    );
+  }
+
+  private static String outcomeForToken(GammaMarket gamma, String tokenId) {
+    if (gamma == null || tokenId == null || tokenId.isBlank()) {
+      return null;
+    }
+    List<String> tokenIds = gamma.clobTokenIds();
+    List<String> outcomes = gamma.outcomes();
+    if (tokenIds == null || outcomes == null || tokenIds.isEmpty() || outcomes.isEmpty()) {
+      return null;
+    }
+    int n = Math.min(tokenIds.size(), outcomes.size());
+    for (int i = 0; i < n; i++) {
+      if (tokenId.equals(tokenIds.get(i))) {
+        return outcomes.get(i);
+      }
+    }
+    return null;
+  }
+
+  private void maybePublishClobTobForToken(
+      String username,
+      String proxyAddress,
+      String userTradeKey,
+      Instant userTradeAt,
+      String marketSlug,
+      String tokenId,
+      String tokenOutcome,
+      JsonNode userTrade,
+      MarketState state,
+      long nowMillis
+  ) {
     if (tokenId == null) {
       return;
     }
@@ -231,13 +306,14 @@ public class PolymarketMarketContextIngestor {
           proxyAddress,
           userTradeKey,
           userTradeAt,
-          state.slug,
+          marketSlug,
           tokenId,
           userTrade,
           cached.tob,
           cached.fetchedAtMillis,
           true,
-          nowMillis - cached.fetchedAtMillis
+          nowMillis - cached.fetchedAtMillis,
+          tokenOutcome
       );
       return;
     }
@@ -261,13 +337,14 @@ public class PolymarketMarketContextIngestor {
         proxyAddress,
         userTradeKey,
         userTradeAt,
-        state.slug,
+        marketSlug,
         tokenId,
         userTrade,
         tob,
         nowMillis,
         false,
-        0L
+        0L,
+        tokenOutcome
     );
   }
 
@@ -282,12 +359,13 @@ public class PolymarketMarketContextIngestor {
       Map<String, Object> tob,
       long tobCapturedAtMillis,
       boolean fromCache,
-      long cacheAgeMillis
+      long cacheAgeMillis,
+      String tokenOutcome
   ) {
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("marketSlug", marketSlug);
     data.put("tokenId", tokenId);
-    data.put("outcome", textOrNull(userTrade.path("outcome")));
+    data.put("outcome", tokenOutcome);
     data.put("trigger", Map.of(
         "username", username,
         "proxyAddress", proxyAddress,

@@ -35,6 +35,17 @@ public final class EvictingKeySet {
     return true;
   }
 
+  public synchronized boolean contains(String key) {
+    if (key == null) {
+      return false;
+    }
+    String k = key.trim();
+    if (k.isEmpty()) {
+      return false;
+    }
+    return map.containsKey(k);
+  }
+
   public synchronized int size() {
     return map.size();
   }
@@ -43,4 +54,3 @@ public final class EvictingKeySet {
     return Map.copyOf(map);
   }
 }
-

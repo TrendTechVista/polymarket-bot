@@ -14,6 +14,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -36,6 +38,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class GabagoolMarketDiscovery {
 
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(10);
+    private static final ZoneId ET_ZONE = ZoneId.of("America/New_York");
 
     // Slug patterns for gabagool22's target markets
     // - 15min BTC: btc-updown-15m-{epoch}
@@ -107,81 +110,79 @@ public class GabagoolMarketDiscovery {
     /**
      * Fetch all active Up/Down events from Gamma API.
      *
-     * Uses /markets endpoint with tag=crypto to get crypto markets,
-     * then filter for BTC/ETH updown patterns.
+     * Gamma's public /markets listing does not include the fast up/down series reliably.
+     * Instead, we deterministically generate candidate slugs around \"now\" and query /events?slug=...
      */
     private List<DiscoveredMarket> fetchActiveUpDownEvents() {
-        List<DiscoveredMarket> markets = new ArrayList<>();
+        Instant now = Instant.now();
+
+        List<String> candidates = new ArrayList<>();
+        candidates.addAll(candidateUpDown15mSlugs("btc", now));
+        candidates.addAll(candidateUpDown15mSlugs("eth", now));
+
+        ZonedDateTime nowEt = ZonedDateTime.ofInstant(now, ET_ZONE);
+        candidates.addAll(candidateUpOrDown1hSlugs("bitcoin", nowEt));
+        candidates.addAll(candidateUpOrDown1hSlugs("ethereum", nowEt));
+
+        List<DiscoveredMarket> markets = new ArrayList<>(candidates.size());
         Set<String> seenSlugs = new HashSet<>();
-
-        try {
-            // Use /markets endpoint with tag=crypto - this returns markets not events
-            String listUrl = properties.polymarket().gammaUrl() + "/markets?tag=crypto&active=true&closed=false&limit=100";
-
-            log.debug("GABAGOOL DISCOVERY: Fetching from: {}", listUrl);
-
-            HttpRequest listRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(listUrl))
-                    .timeout(HTTP_TIMEOUT)
-                    .header("Accept", "application/json")
-                    .GET()
-                    .build();
-
-            HttpResponse<String> listResponse = httpClient.send(listRequest, HttpResponse.BodyHandlers.ofString());
-
-            if (listResponse.statusCode() != 200) {
-                log.warn("Gamma API returned status {}", listResponse.statusCode());
-                return markets;
+        for (String slug : candidates) {
+            if (!seenSlugs.add(slug)) {
+                continue;
             }
-
-            JsonNode listRoot = objectMapper.readTree(listResponse.body());
-            log.debug("GABAGOOL DISCOVERY: Got {} markets from API", listRoot.size());
-
-            List<String> sampleSlugs = new ArrayList<>();
-            List<String> matchingSlugs = new ArrayList<>();
-
-            if (listRoot.isArray()) {
-                for (JsonNode marketNode : listRoot) {
-                    String slug = marketNode.path("slug").asText("");
-
-                    if (sampleSlugs.size() < 15) {
-                        sampleSlugs.add(slug);
-                    }
-
-                    // Match BTC/ETH updown-15m and up-or-down patterns
-                    boolean isMatch = (slug.startsWith("btc-updown-15m") ||
-                                      slug.startsWith("eth-updown-15m") ||
-                                      slug.startsWith("bitcoin-up-or-down") ||
-                                      slug.startsWith("ethereum-up-or-down"));
-
-                    if (!isMatch) {
-                        continue;
-                    }
-
-                    matchingSlugs.add(slug);
-
-                    if (seenSlugs.contains(slug)) {
-                        continue;
-                    }
-                    seenSlugs.add(slug);
-
-                    // Try to parse directly from this market node (it has clobTokenIds)
-                    DiscoveredMarket market = parseMarketNode(marketNode);
-                    if (market != null) {
-                        markets.add(market);
-                    }
-                }
+            DiscoveredMarket market = fetchMarketBySlug(slug);
+            if (market != null) {
+                markets.add(market);
             }
-
-            log.info("GABAGOOL DISCOVERY: Sample slugs: {}", sampleSlugs);
-            log.info("GABAGOOL DISCOVERY: Matching BTC/ETH slugs: {}", matchingSlugs);
-            log.info("GABAGOOL DISCOVERY: Successfully parsed {} markets", markets.size());
-
-        } catch (Exception e) {
-            log.warn("Failed to fetch active markets: {}", e.getMessage(), e);
         }
 
+        if (log.isDebugEnabled()) {
+            log.debug("GABAGOOL DISCOVERY: Candidates: {}", candidates);
+        }
         return markets;
+    }
+
+    private static List<String> candidateUpDown15mSlugs(String assetPrefix, Instant now) {
+        long nowSec = now.getEpochSecond();
+        long from = nowSec - Duration.ofMinutes(10).toSeconds();
+        long to = nowSec + Duration.ofMinutes(5).toSeconds();
+
+        long startFrom = (from / 900L) * 900L;
+        long startTo = (to / 900L) * 900L;
+
+        List<String> out = new ArrayList<>();
+        for (long start = startFrom; start <= startTo; start += 900L) {
+            out.add(assetPrefix + "-updown-15m-" + start);
+        }
+        return out;
+    }
+
+    private static List<String> candidateUpOrDown1hSlugs(String assetPrefix, ZonedDateTime nowEt) {
+        // The 1-hour slug is formatted like: bitcoin-up-or-down-december-14-11am-et
+        ZonedDateTime hourStart = nowEt.truncatedTo(ChronoUnit.HOURS);
+        List<ZonedDateTime> candidates = List.of(
+                hourStart.minusHours(2),
+                hourStart.minusHours(1),
+                hourStart,
+                hourStart.plusHours(1)
+        );
+        List<String> out = new ArrayList<>(candidates.size());
+        for (ZonedDateTime start : candidates) {
+            out.add(buildUpOrDown1hSlug(assetPrefix, start));
+        }
+        return out;
+    }
+
+    private static String buildUpOrDown1hSlug(String assetPrefix, ZonedDateTime hourStartEt) {
+        String month = hourStartEt.getMonth().getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH).toLowerCase(Locale.ROOT);
+        int day = hourStartEt.getDayOfMonth();
+        int hour24 = hourStartEt.getHour();
+        int hour12 = hour24 % 12;
+        if (hour12 == 0) {
+            hour12 = 12;
+        }
+        String ampm = hour24 < 12 ? "am" : "pm";
+        return "%s-up-or-down-%s-%d-%d%s-et".formatted(assetPrefix, month, day, hour12, ampm);
     }
 
     /**
@@ -472,4 +473,3 @@ public class GabagoolMarketDiscovery {
             String marketType
     ) {}
 }
-

@@ -9,6 +9,12 @@ ingestor:
     enabled: true
     backfill-on-start: false
     page-size: 500
+  polygon:
+    enabled: false
+    rpc-url: https://polygon-rpc.com
+    poll-interval-millis: 500
+    max-receipts-per-poll: 25
+    request-delay-millis: 100
   market-context:
     enabled: true
     market-trades-limit: 50

@@ -91,6 +91,36 @@ public class ClobMarketWebSocketClient {
     return best;
   }
 
+  private static TopLevel extractBestLevel(JsonNode levels, boolean bestIsMax) {
+    if (levels == null || !levels.isArray()) {
+      return null;
+    }
+    BigDecimal bestPrice = null;
+    BigDecimal bestSize = null;
+    for (JsonNode level : levels) {
+      BigDecimal price = parseDecimal(level.path("price").asText(null));
+      if (price == null) {
+        continue;
+      }
+      BigDecimal size = parseDecimal(level.path("size").asText(null));
+      if (bestPrice == null) {
+        bestPrice = price;
+        bestSize = size;
+        continue;
+      }
+      int cmp = price.compareTo(bestPrice);
+      boolean better = bestIsMax ? (cmp > 0) : (cmp < 0);
+      if (better) {
+        bestPrice = price;
+        bestSize = size;
+      }
+    }
+    if (bestPrice == null) {
+      return null;
+    }
+    return new TopLevel(bestPrice, bestSize);
+  }
+
   private static BigDecimal parseDecimal(String s) {
     if (s == null || s.isBlank()) {
       return null;
@@ -289,8 +319,13 @@ public class ClobMarketWebSocketClient {
     JsonNode bidsNode = node.has("bids") ? node.get("bids") : node.get("buys");
     JsonNode asksNode = node.has("asks") ? node.get("asks") : node.get("sells");
 
-    BigDecimal bestBid = extractBestPrice(bidsNode, true);
-    BigDecimal bestAsk = extractBestPrice(asksNode, false);
+    TopLevel bestBidLevel = extractBestLevel(bidsNode, true);
+    TopLevel bestAskLevel = extractBestLevel(asksNode, false);
+
+    BigDecimal bestBid = bestBidLevel == null ? null : bestBidLevel.price();
+    BigDecimal bestBidSize = bestBidLevel == null ? null : bestBidLevel.size();
+    BigDecimal bestAsk = bestAskLevel == null ? null : bestAskLevel.price();
+    BigDecimal bestAskSize = bestAskLevel == null ? null : bestAskLevel.size();
     BigDecimal lastTradePrice = parseDecimal(node.path("last_trade_price").asText(null));
 
     Instant now = Instant.now(clock);
@@ -303,7 +338,9 @@ public class ClobMarketWebSocketClient {
       if (nextLast != null && (prevLast == null || (lastTradePrice != null && prevLast != null && lastTradePrice.compareTo(prevLast) != 0))) {
         nextTradeAt = now;
       }
-      return new TopOfBook(bestBid, bestAsk, nextLast, now, nextTradeAt);
+      BigDecimal nextBidSize = bestBidSize != null ? bestBidSize : (prev == null ? null : prev.bestBidSize());
+      BigDecimal nextAskSize = bestAskSize != null ? bestAskSize : (prev == null ? null : prev.bestAskSize());
+      return new TopOfBook(bestBid, bestAsk, nextBidSize, nextAskSize, nextLast, now, nextTradeAt);
     });
     maybePublishTopOfBook(assetId, tob);
   }
@@ -321,7 +358,18 @@ public class ClobMarketWebSocketClient {
       }
       BigDecimal bestBid = parseDecimal(change.path("best_bid").asText(null));
       BigDecimal bestAsk = parseDecimal(change.path("best_ask").asText(null));
-      TopOfBook tob = topOfBookByAssetId.compute(assetId, (k, prev) -> new TopOfBook(bestBid != null ? bestBid : (prev == null ? null : prev.bestBid()), bestAsk != null ? bestAsk : (prev == null ? null : prev.bestAsk()), prev == null ? null : prev.lastTradePrice(), now, prev == null ? null : prev.lastTradeAt()));
+      BigDecimal bestBidSize = parseDecimal(change.path("best_bid_size").asText(null));
+      BigDecimal bestAskSize = parseDecimal(change.path("best_ask_size").asText(null));
+
+      TopOfBook tob = topOfBookByAssetId.compute(assetId, (k, prev) -> new TopOfBook(
+          bestBid != null ? bestBid : (prev == null ? null : prev.bestBid()),
+          bestAsk != null ? bestAsk : (prev == null ? null : prev.bestAsk()),
+          bestBidSize != null ? bestBidSize : (prev == null ? null : prev.bestBidSize()),
+          bestAskSize != null ? bestAskSize : (prev == null ? null : prev.bestAskSize()),
+          prev == null ? null : prev.lastTradePrice(),
+          now,
+          prev == null ? null : prev.lastTradeAt()
+      ));
       maybePublishTopOfBook(assetId, tob);
     }
   }
@@ -333,7 +381,15 @@ public class ClobMarketWebSocketClient {
     }
     BigDecimal price = parseDecimal(node.path("price").asText(null));
     Instant now = Instant.now(clock);
-    TopOfBook tob = topOfBookByAssetId.compute(assetId, (k, prev) -> new TopOfBook(prev == null ? null : prev.bestBid(), prev == null ? null : prev.bestAsk(), price, now, now));
+    TopOfBook tob = topOfBookByAssetId.compute(assetId, (k, prev) -> new TopOfBook(
+        prev == null ? null : prev.bestBid(),
+        prev == null ? null : prev.bestAsk(),
+        prev == null ? null : prev.bestBidSize(),
+        prev == null ? null : prev.bestAskSize(),
+        price,
+        now,
+        now
+    ));
     maybePublishTopOfBook(assetId, tob);
   }
 
@@ -369,6 +425,8 @@ public class ClobMarketWebSocketClient {
         tob.lastTradeAt()
     ));
   }
+
+  private record TopLevel(BigDecimal price, BigDecimal size) {}
 
   private final class Listener implements WebSocket.Listener {
     private final StringBuilder buf = new StringBuilder(8192);

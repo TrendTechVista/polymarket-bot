@@ -4,6 +4,7 @@ import com.polybot.hft.events.HftEventsProperties;
 import com.polybot.ingestor.config.IngestorProperties;
 import com.polybot.ingestor.ingest.PolymarketMarketContextIngestor;
 import com.polybot.ingestor.ingest.PolymarketUserIngestor;
+import com.polybot.ingestor.ingest.PolygonTxReceiptIngestor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +21,7 @@ public class IngestorController {
   private final HftEventsProperties hftEventsProperties;
   private final PolymarketUserIngestor ingestor;
   private final PolymarketMarketContextIngestor marketContext;
+  private final PolygonTxReceiptIngestor polygonTxReceipts;
 
   @GetMapping("/status")
   public Status status() {
@@ -53,7 +55,12 @@ public class IngestorController {
         marketContext.publishedMarketTrades(),
         marketContext.gammaPolls(),
         marketContext.lastGammaPollAtMillis(),
-        marketContext.failures()
+        marketContext.failures(),
+        polygonTxReceipts.polls(),
+        polygonTxReceipts.publishedReceipts(),
+        polygonTxReceipts.failures(),
+        polygonTxReceipts.lastPollAtMillis(),
+        polygonTxReceipts.queuedTxCount()
     );
   }
 
@@ -87,7 +94,12 @@ public class IngestorController {
       long marketContextPublishedMarketTrades,
       long marketContextGammaPolls,
       long marketContextLastGammaPollAtMillis,
-      long marketContextFailures
+      long marketContextFailures,
+      long polygonTxPolls,
+      long polygonTxPublishedReceipts,
+      long polygonTxFailures,
+      long polygonTxLastPollAtMillis,
+      int polygonTxQueuedCount
   ) {
   }
 }

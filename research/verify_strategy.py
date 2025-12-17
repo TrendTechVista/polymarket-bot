@@ -48,7 +48,7 @@ r = client.query("""
             `u.market_slug` LIKE 'ethereum-up-or-down-%', '1hour-ETH',
             'other'
         ) as mtype,
-        lower(outcome) as outcome,
+        lower(`u.outcome`) as outcome,
         count() as trades,
         round(sumIf((settle_price - price) * size, settle_price IS NOT NULL), 2) as pnl,
         round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0) * 100.0 / 
@@ -132,12 +132,12 @@ r = client.query("""
             `u.market_slug` LIKE 'ethereum-up-or-down-%', '1hour-ETH',
             'other'
         ) as mtype,
-        round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0 AND lower(outcome) = 'down') * 100.0 / 
-              nullIf(countIf(settle_price IS NOT NULL AND lower(outcome) = 'down'), 0), 2) as down_win_rate,
-        round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0 AND lower(outcome) = 'up') * 100.0 / 
-              nullIf(countIf(settle_price IS NOT NULL AND lower(outcome) = 'up'), 0), 2) as up_win_rate,
-        round(sumIf((settle_price - price) * size, settle_price IS NOT NULL AND lower(outcome) = 'down'), 2) as down_pnl,
-        round(sumIf((settle_price - price) * size, settle_price IS NOT NULL AND lower(outcome) = 'up'), 2) as up_pnl
+        round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0 AND lower(`u.outcome`) = 'down') * 100.0 / 
+              nullIf(countIf(settle_price IS NOT NULL AND lower(`u.outcome`) = 'down'), 0), 2) as down_win_rate,
+        round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0 AND lower(`u.outcome`) = 'up') * 100.0 / 
+              nullIf(countIf(settle_price IS NOT NULL AND lower(`u.outcome`) = 'up'), 0), 2) as up_win_rate,
+        round(sumIf((settle_price - price) * size, settle_price IS NOT NULL AND lower(`u.outcome`) = 'down'), 2) as down_pnl,
+        round(sumIf((settle_price - price) * size, settle_price IS NOT NULL AND lower(`u.outcome`) = 'up'), 2) as up_pnl
     FROM user_trade_enriched_v2
     WHERE username = 'gabagool22'
     GROUP BY mtype
@@ -179,22 +179,17 @@ print("6. FINAL STRATEGY RECOMMENDATION")
 print("=" * 60)
 
 print("""
-┌─────────────────────────────────────────────────────────────┐
-│             CONFIRMED GABAGOOL22 STRATEGY                    │
-├─────────────────────────────────────────────────────────────┤
-│  MARKETS:     BTC + ETH, 15min + 1hour Up/Down              │
-│  FOCUS:       15min-BTC (highest PnL, best Sharpe)          │
-│  TIMING:      10-15 min before resolution                   │
-│  DIRECTION:   Favor DOWN (55% vs 48% win rate)              │
-│  EXECUTION:   MAKER at bid+1 tick (7x PnL improvement)      │
-│  SIZING:      $10-20 per trade                              │
-├─────────────────────────────────────────────────────────────┤
-│  Monte Carlo (20K iterations):                               │
-│    - Actual: $1,370 median, 0.96 Sharpe                     │
-│    - Maker:  $9,506 median, 6.65 Sharpe                     │
-│    - Improvement: 7x PnL, 7x Sharpe, 3x lower drawdown      │
-└─────────────────────────────────────────────────────────────┘
+Observed from fills + (often stale) TOB snapshots:
+- Core universe is BTC/ETH Up/Down in 15m + 1h series
+- Edge is dominated by execution quality (paying below mid / maker-like fills)
+- Timing effects exist, but differ by series (15m: 10-15m bucket; 1h: 15-60m buckets)
+
+Not provable from public fills alone:
+- Exact order placement/cancel logic (we only see filled trades)
+- Fee tier / maker rebates (not included in PnL here)
+- True decision-time book state (TOB lag is large in this dataset)
+
+Recommendation:
+- Treat this report as a descriptive snapshot, not a deploy-ready “exact clone”.
+- Use `research/run_simulation.py` for Monte Carlo and `docs/GABAGOOL22_STRATEGY_RESEARCH_ADDENDUM.md` for the data-limit checklist.
 """)
-
-print("\n✅ STRATEGY VERIFIED AND READY FOR DEPLOYMENT")
-

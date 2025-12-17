@@ -102,4 +102,24 @@ public class IngestorHttpConfiguration {
         .defaultHeader(HttpHeaders.ACCEPT, "application/json")
         .build();
   }
+
+  @Bean
+  public RestClient polygonRpcRestClient(
+      PolygonProperties properties,
+      RestClient.Builder builder
+  ) {
+    HttpClient httpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(5))
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .build();
+
+    JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+    requestFactory.setReadTimeout(Duration.ofSeconds(20));
+
+    return builder
+        .baseUrl(properties.rpcUrl().toString())
+        .requestFactory(requestFactory)
+        .defaultHeader(HttpHeaders.ACCEPT, "application/json")
+        .build();
+  }
 }

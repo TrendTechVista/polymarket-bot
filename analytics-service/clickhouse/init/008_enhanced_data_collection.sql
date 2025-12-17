@@ -53,9 +53,9 @@ ALTER TABLE polybot.user_trades ADD COLUMN IF NOT EXISTS tx_status LowCardinalit
 CREATE OR REPLACE VIEW polybot.clob_tob_by_trade_v2 AS
 SELECT
   trade_key,
+  token_id,
   max(captured_at) AS tob_captured_at,
   argMax(market_slug, captured_at) AS market_slug,
-  argMax(token_id, captured_at) AS token_id,
   argMax(outcome, captured_at) AS outcome,
   argMax(best_bid_price, captured_at) AS best_bid_price,
   argMax(best_bid_size, captured_at) AS best_bid_size,
@@ -75,7 +75,7 @@ SELECT
   argMax(book_imbalance, captured_at) AS book_imbalance,
   argMax(depth_at_1pct, captured_at) AS depth_at_1pct
 FROM polybot.clob_tob
-GROUP BY trade_key;
+GROUP BY trade_key, token_id;
 
 
 -- =============================================================================
@@ -182,6 +182,15 @@ SELECT
     CAST(NULL, 'Nullable(Float64)')
   ) AS realized_pnl,
 
+  -- On-chain tx metadata (Polygon receipt; optional)
+  if(pr.tx_hash = '', CAST(NULL, 'Nullable(UInt64)'), pr.block_number) AS tx_block_number,
+  if(pr.tx_hash = '', CAST(NULL, 'Nullable(DateTime64(3))'), pr.block_timestamp) AS tx_block_timestamp,
+  if(pr.tx_hash = '', CAST(NULL, 'Nullable(UInt8)'), pr.status) AS tx_status,
+  nullIf(pr.from_address, '') AS tx_from_address,
+  nullIf(pr.to_address, '') AS tx_to_address,
+  if(pr.tx_hash = '', CAST(NULL, 'Nullable(UInt64)'), pr.gas_used) AS tx_gas_used,
+  if(pr.tx_hash = '', CAST(NULL, 'Nullable(UInt64)'), pr.effective_gas_price) AS tx_effective_gas_price,
+
   -- NEW: Resolution timing from resolution table
   r.latest_resolved_at AS market_resolved_at,
   if(r.latest_resolved_at IS NOT NULL, dateDiff('second', u.ts, r.latest_resolved_at), NULL) AS seconds_to_resolution,
@@ -197,8 +206,9 @@ SELECT
   ) AS exec_type
 
 FROM polybot.user_trades_dedup u
-LEFT JOIN polybot.clob_tob_by_trade_v2 t ON t.trade_key = u.event_key
+LEFT JOIN polybot.clob_tob_by_trade_v2 t ON t.trade_key = u.event_key AND t.token_id = u.token_id
 LEFT JOIN polybot.gamma_markets_latest g ON g.slug = u.market_slug
+LEFT JOIN polybot.polygon_tx_receipts_latest pr ON pr.tx_hash = u.transaction_hash
 LEFT JOIN polybot.market_resolutions_latest r ON r.market_slug = u.market_slug;
 
 

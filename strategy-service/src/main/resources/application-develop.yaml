@@ -30,13 +30,17 @@ hft:
       refresh-millis: 250
       min-seconds-to-end: 600    # 10 minutes (optimal window start)
       max-seconds-to-end: 900    # 15 minutes (optimal window end)
-      quote-size: 10             # USDC per trade (gabagool22 mean=$7.36, median/mode=$10, range=$1-50)
+      quote-size: 10             # USDC notional per order (approx. entryPrice * shares)
+      quote-size-bankroll-fraction: 0.0
       imbalance-threshold: 0.05  # Min book imbalance to trigger signal
       improve-ticks: 1           # Place at bid+1 tick (MAKER, not taker)
+      # Optional bankroll-aware caps (set bankroll-usd > 0 to enable)
+      bankroll-usd: 0
+      max-order-bankroll-fraction: 0.0
+      max-total-bankroll-fraction: 0.0
 
 # Logging - enable debug for gabagool strategy
 logging:
   level:
     com.polybot.hft.polymarket.strategy: DEBUG
     com.polybot.hft.polymarket.strategy.GabagoolMarketDiscovery: DEBUG
-
