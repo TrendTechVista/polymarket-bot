@@ -112,4 +112,52 @@ public interface UserPositionAnalyticsRepository {
       double roi
   ) {
   }
+
+  // === New methods for complete-set and microstructure analysis ===
+
+  CompleteSetSummary completeSetSummary(String username);
+
+  List<CompleteSetPair> completeSetPairs(String username, int windowSeconds, int limit);
+
+  MicrostructureSummary microstructureSummary(String username);
+
+  record CompleteSetSummary(
+      long totalPairs,
+      long positiveEdgePairs,
+      double totalMatchedShares,
+      double totalEdgePnl,
+      double avgEdgePerShare,
+      double avgTimeGapSec,
+      long uniqueMarkets
+  ) {
+  }
+
+  record CompleteSetPair(
+      String marketSlug,
+      Instant ts1,
+      String outcome1,
+      double price1,
+      double size1,
+      Instant ts2,
+      String outcome2,
+      double price2,
+      double size2,
+      double matchedSize,
+      double combinedCost,
+      double edgePerShare,
+      double edgePnl,
+      long timeGapSec
+  ) {
+  }
+
+  record MicrostructureSummary(
+      long trades,
+      Double avgVolume1mBefore,
+      Double avgTradeCount1mBefore,
+      Double avgVolume1mAfter,
+      Double avgTimeSinceLastTradeMs,
+      Double avgPriceRange1mBefore,
+      double priorActivityCoverage
+  ) {
+  }
 }

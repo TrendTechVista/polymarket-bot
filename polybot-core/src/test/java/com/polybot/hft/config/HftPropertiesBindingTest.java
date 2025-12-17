@@ -15,10 +15,10 @@ class HftPropertiesBindingTest {
           "hft.mode=LIVE",
           "hft.executor.base-url=http://localhost:8080",
           "hft.polymarket.market-ws-enabled=true",
-          "hft.strategy.house-edge.enabled=true",
-          "hft.strategy.house-edge.discovery.enabled=true",
-          "hft.strategy.house-edge.discovery.queries[0]=Bitcoin",
-          "hft.strategy.house-edge.discovery.queries[1]=Ethereum"
+          "hft.strategy.gabagool.enabled=true",
+          "hft.strategy.gabagool.min-seconds-to-end=600",
+          "hft.strategy.gabagool.max-seconds-to-end=900",
+          "hft.strategy.gabagool.quote-size=10"
       );
 
   @Test
@@ -30,10 +30,11 @@ class HftPropertiesBindingTest {
       assertThat(properties.executor().baseUrl()).isEqualTo("http://localhost:8080");
       assertThat(properties.polymarket().marketWsEnabled()).isTrue();
 
-      HftProperties.HouseEdge houseEdge = properties.strategy().houseEdge();
-      assertThat(houseEdge.enabled()).isTrue();
-      assertThat(houseEdge.discovery().enabled()).isTrue();
-      assertThat(houseEdge.discovery().queries()).containsExactly("Bitcoin", "Ethereum");
+      HftProperties.Gabagool gabagool = properties.strategy().gabagool();
+      assertThat(gabagool.enabled()).isTrue();
+      assertThat(gabagool.minSecondsToEnd()).isEqualTo(600L);
+      assertThat(gabagool.maxSecondsToEnd()).isEqualTo(900L);
+      assertThat(gabagool.quoteSize().intValue()).isEqualTo(10);
     });
   }
 

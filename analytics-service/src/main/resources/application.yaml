@@ -19,3 +19,4 @@ logging:
     com.clickhouse: WARN
     com.clickhouse.client.http: WARN
     com.clickhouse.jdbc: WARN
+    org.apache.coyote.http11.Http11Processor: WARN

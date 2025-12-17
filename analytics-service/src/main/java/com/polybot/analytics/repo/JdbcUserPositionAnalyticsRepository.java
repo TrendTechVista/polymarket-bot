@@ -613,4 +613,112 @@ public class JdbcUserPositionAnalyticsRepository implements UserPositionAnalytic
     Instant instant = ts.toInstant();
     return instant.equals(Instant.EPOCH) ? null : instant;
   }
+
+  @Override
+  public CompleteSetSummary completeSetSummary(String username) {
+    String sql = """
+        SELECT
+          count() AS total_markets,
+          countIf(edge_per_share > 0) AS positive_edge_markets,
+          sum(matched_shares) AS total_matched_shares,
+          sum(edge_pnl) AS total_edge_pnl,
+          if(sum(matched_shares) > 0, sum(edge_pnl) / sum(matched_shares), 0) AS avg_edge_per_share,
+          avg(up_trades + down_trades) AS avg_trades_per_market
+        FROM user_complete_sets_by_market
+        WHERE username = ?
+        """;
+
+    return jdbcTemplate.query(sql, rs -> {
+      if (!rs.next()) {
+        return new CompleteSetSummary(0, 0, 0, 0, 0, 0, 0);
+      }
+      return new CompleteSetSummary(
+          rs.getLong("total_markets"),
+          rs.getLong("positive_edge_markets"),
+          rs.getDouble("total_matched_shares"),
+          rs.getDouble("total_edge_pnl"),
+          rs.getDouble("avg_edge_per_share"),
+          rs.getDouble("avg_trades_per_market"),
+          rs.getLong("total_markets")  // unique_markets = total_markets in this view
+      );
+    }, username);
+  }
+
+  @Override
+  public List<CompleteSetPair> completeSetPairs(String username, int windowSeconds, int limit) {
+    int safeLimit = Math.max(1, Math.min(500, limit));
+    // Use the market-level aggregated view (individual pair detection is done in Python)
+    String sql = """
+        SELECT
+          market_slug,
+          first_trade_at AS ts_1,
+          'Up' AS outcome_1,
+          avg_up_price AS price_1,
+          up_shares AS size_1,
+          last_trade_at AS ts_2,
+          'Down' AS outcome_2,
+          avg_down_price AS price_2,
+          down_shares AS size_2,
+          matched_shares AS matched_size,
+          avg_up_price + avg_down_price AS combined_cost,
+          edge_per_share,
+          edge_pnl,
+          dateDiff('second', first_trade_at, last_trade_at) AS time_gap_sec
+        FROM user_complete_sets_by_market
+        WHERE username = ?
+        ORDER BY edge_pnl DESC
+        LIMIT %d
+        """.formatted(safeLimit);
+
+    return jdbcTemplate.query(sql, (rs, rowNum) -> new CompleteSetPair(
+        rs.getString("market_slug"),
+        rs.getTimestamp("ts_1").toInstant(),
+        rs.getString("outcome_1"),
+        rs.getDouble("price_1"),
+        rs.getDouble("size_1"),
+        rs.getTimestamp("ts_2").toInstant(),
+        rs.getString("outcome_2"),
+        rs.getDouble("price_2"),
+        rs.getDouble("size_2"),
+        rs.getDouble("matched_size"),
+        rs.getDouble("combined_cost"),
+        rs.getDouble("edge_per_share"),
+        rs.getDouble("edge_pnl"),
+        rs.getLong("time_gap_sec")
+    ), username);
+  }
+
+  @Override
+  public MicrostructureSummary microstructureSummary(String username) {
+    String sql = """
+        SELECT
+          count() AS trades,
+          avg(market_volume_1m_before) AS avg_volume_1m_before,
+          avg(market_trade_count_1m_before) AS avg_trade_count_1m_before,
+          avg(market_volume_1m_after) AS avg_volume_1m_after,
+          avg(price_range_1m_before) AS avg_price_range_1m_before,
+          if(count() > 0, countIf(market_volume_1m_before IS NOT NULL AND market_volume_1m_before > 0) / count(), 0) AS prior_activity_coverage
+        FROM user_trade_with_microstructure
+        WHERE username = ?
+        """;
+
+    return jdbcTemplate.query(sql, rs -> {
+      if (!rs.next()) {
+        return new MicrostructureSummary(0, null, null, null, null, null, 0);
+      }
+      try {
+        return new MicrostructureSummary(
+            rs.getLong("trades"),
+            getDoubleOrNull(rs, "avg_volume_1m_before"),
+            getDoubleOrNull(rs, "avg_trade_count_1m_before"),
+            getDoubleOrNull(rs, "avg_volume_1m_after"),
+            null, // time_since_last_trade_ms removed from simplified view
+            getDoubleOrNull(rs, "avg_price_range_1m_before"),
+            rs.getDouble("prior_activity_coverage")
+        );
+      } catch (Exception e) {
+        throw new RuntimeException("Failed to map microstructure summary", e);
+      }
+    }, username);
+  }
 }

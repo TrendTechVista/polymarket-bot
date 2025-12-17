@@ -44,7 +44,7 @@ Then:
 
 ## Connection defaults
 
-The notebook/script defaults to:
+The notebooks default to:
 
 - ClickHouse HTTP: `http://127.0.0.1:8123`
 - Database: `polybot`

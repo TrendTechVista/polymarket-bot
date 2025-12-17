@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -498,6 +499,24 @@ public class PolymarketMarketContextIngestor {
     BigDecimal mid = bid != null && ask != null ? bid.add(ask).divide(BigDecimal.valueOf(2), 18, RoundingMode.HALF_UP) : null;
     BigDecimal spread = bid != null && ask != null ? ask.subtract(bid) : null;
 
+    // Extract full book levels (top 10)
+    List<Map<String, Object>> bidLevels = extractLevels(bids, 10, true);
+    List<Map<String, Object>> askLevels = extractLevels(asks, 10, false);
+
+    // Calculate total volumes
+    double totalBidVolume = bidLevels.stream().mapToDouble(l -> (Double) l.get("size")).sum();
+    double totalAskVolume = askLevels.stream().mapToDouble(l -> (Double) l.get("size")).sum();
+
+    // Calculate book imbalance: (bids - asks) / (bids + asks)
+    double totalVolume = totalBidVolume + totalAskVolume;
+    Double bookImbalance = totalVolume > 0 ? (totalBidVolume - totalAskVolume) / totalVolume : null;
+
+    // Calculate depth within 1% of mid
+    Double depthAt1Pct = null;
+    if (mid != null && mid.doubleValue() > 0) {
+      depthAt1Pct = calculateDepthWithinPercent(bidLevels, askLevels, mid.doubleValue(), 0.01);
+    }
+
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("assetId", textOrNull(book.path("asset_id")));
     out.put("timestamp", textOrNull(book.path("timestamp")));
@@ -506,7 +525,95 @@ public class PolymarketMarketContextIngestor {
     out.put("bestAsk", bestAsk);
     out.put("mid", mid == null ? null : mid.toPlainString());
     out.put("spread", spread == null ? null : spread.toPlainString());
+
+    // NEW: Full order book depth
+    out.put("bidLevels", bidLevels);
+    out.put("askLevels", askLevels);
+    out.put("totalBidVolume", totalBidVolume);
+    out.put("totalAskVolume", totalAskVolume);
+    out.put("bookImbalance", bookImbalance);
+    out.put("depthAt1Pct", depthAt1Pct);
+
     return out;
+  }
+
+  private static List<Map<String, Object>> extractLevels(JsonNode levels, int limit, boolean descending) {
+    List<Map<String, Object>> result = new ArrayList<>();
+    if (levels == null || !levels.isArray()) {
+      return result;
+    }
+
+    // Convert to list and sort
+    List<JsonNode> levelList = new ArrayList<>();
+    for (JsonNode level : levels) {
+      levelList.add(level);
+    }
+
+    // Sort by price (descending for bids, ascending for asks)
+    levelList.sort((a, b) -> {
+      BigDecimal pa = priceOrNull(a);
+      BigDecimal pb = priceOrNull(b);
+      if (pa == null && pb == null) return 0;
+      if (pa == null) return 1;
+      if (pb == null) return -1;
+      return descending ? pb.compareTo(pa) : pa.compareTo(pb);
+    });
+
+    // Extract top N levels
+    int count = Math.min(limit, levelList.size());
+    for (int i = 0; i < count; i++) {
+      JsonNode level = levelList.get(i);
+      BigDecimal price = priceOrNull(level);
+      BigDecimal size = sizeOrNull(level);
+      if (price != null && size != null && price.doubleValue() > 0 && size.doubleValue() > 0) {
+        result.add(Map.of(
+            "price", price.doubleValue(),
+            "size", size.doubleValue()
+        ));
+      }
+    }
+
+    return result;
+  }
+
+  private static Double calculateDepthWithinPercent(
+      List<Map<String, Object>> bidLevels,
+      List<Map<String, Object>> askLevels,
+      double midPrice,
+      double percentRange
+  ) {
+    if (midPrice <= 0) return null;
+
+    double lowerBound = midPrice * (1 - percentRange);
+    double upperBound = midPrice * (1 + percentRange);
+    double depth = 0;
+
+    for (Map<String, Object> level : bidLevels) {
+      double price = (Double) level.get("price");
+      if (price >= lowerBound) {
+        depth += (Double) level.get("size");
+      }
+    }
+
+    for (Map<String, Object> level : askLevels) {
+      double price = (Double) level.get("price");
+      if (price <= upperBound) {
+        depth += (Double) level.get("size");
+      }
+    }
+
+    return depth;
+  }
+
+  private static BigDecimal sizeOrNull(JsonNode level) {
+    if (level == null) return null;
+    String sizeStr = level.path("size").asText(null);
+    if (sizeStr == null || sizeStr.isBlank()) return null;
+    try {
+      return new BigDecimal(sizeStr);
+    } catch (NumberFormatException e) {
+      return null;
+    }
   }
 
   private static JsonNode bestBidLevel(JsonNode bids) {

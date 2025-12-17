@@ -50,21 +50,7 @@ public record HftProperties(
         .toList();
   }
 
-  private static List<HouseEdgeMarket> sanitizeHouseEdgeMarkets(List<HouseEdgeMarket> markets) {
-    if (markets == null || markets.isEmpty()) {
-      return List.of();
-    }
-    return markets.stream()
-        .filter(Objects::nonNull)
-        .map(m -> new HouseEdgeMarket(
-            m.name() == null ? null : m.name().trim(),
-            m.yesTokenId() == null ? null : m.yesTokenId().trim(),
-            m.noTokenId() == null ? null : m.noTokenId().trim()
-        ))
-        .filter(m -> m.yesTokenId() != null && !m.yesTokenId().isBlank())
-        .filter(m -> m.noTokenId() != null && !m.noTokenId().isBlank())
-        .toList();
-  }
+
 
   private static Executor defaultExecutor() {
     return new Executor(null, null);
@@ -98,13 +84,7 @@ public record HftProperties(
     return new Strategy(null);
   }
 
-  private static HouseEdge defaultHouseEdge() {
-    return new HouseEdge(false, null, null, null, null, null, null, null, null, null);
-  }
 
-  private static HouseEdgeDiscovery defaultHouseEdgeDiscovery() {
-    return new HouseEdgeDiscovery(false, List.of("Bitcoin", "Ethereum"), null, null, null, null);
-  }
 
   public enum TradingMode {
     PAPER,
@@ -260,85 +240,72 @@ public record HftProperties(
     }
   }
 
-  public record Strategy(@Valid HouseEdge houseEdge) {
+  public record Strategy(@Valid Gabagool gabagool) {
     public Strategy {
-      if (houseEdge == null) {
-        houseEdge = defaultHouseEdge();
+      if (gabagool == null) {
+        gabagool = defaultGabagool();
       }
     }
   }
 
-  public record HouseEdge(
+  private static Gabagool defaultGabagool() {
+    return new Gabagool(false, null, null, null, null, null, null, null);
+  }
+
+  /**
+   * Gabagool-style directional strategy configuration.
+   * Based on reverse-engineering gabagool22's trading patterns.
+   */
+  public record Gabagool(
       boolean enabled,
       @NotNull @Min(50) Long refreshMillis,
-      @NotNull @Min(1) Integer tradeSamples,
-      @NotNull @Min(1) Long tradeWindowSeconds,
-      @NotNull @PositiveOrZero Integer aggressiveImproveTicks,
-      @NotNull @PositiveOrZero Integer passiveAwayTicks,
+      @NotNull @Min(60) Long minSecondsToEnd,
+      @NotNull @Min(120) Long maxSecondsToEnd,
       @NotNull @PositiveOrZero BigDecimal quoteSize,
-      @NotNull @PositiveOrZero BigDecimal loserInventoryLimit,
-      @Valid HouseEdgeDiscovery discovery,
-      @Valid List<HouseEdgeMarket> markets
+      @NotNull @PositiveOrZero Double imbalanceThreshold,
+      @NotNull @Min(0) Integer improveTicks,
+      @Valid List<GabagoolMarket> markets
   ) {
-    public HouseEdge {
+    public Gabagool {
       if (refreshMillis == null) {
         refreshMillis = 250L;
       }
-      if (tradeSamples == null) {
-        tradeSamples = 10;
+      if (minSecondsToEnd == null) {
+        minSecondsToEnd = 600L;  // 10 minutes
       }
-      if (tradeWindowSeconds == null) {
-        tradeWindowSeconds = 30L;
-      }
-      if (aggressiveImproveTicks == null) {
-        aggressiveImproveTicks = 1;
-      }
-      if (passiveAwayTicks == null) {
-        passiveAwayTicks = 10;
+      if (maxSecondsToEnd == null) {
+        maxSecondsToEnd = 900L;  // 15 minutes
       }
       if (quoteSize == null) {
-        quoteSize = BigDecimal.valueOf(5);
+        quoteSize = BigDecimal.valueOf(10);
       }
-      if (loserInventoryLimit == null) {
-        loserInventoryLimit = BigDecimal.ZERO;
+      if (imbalanceThreshold == null) {
+        imbalanceThreshold = 0.05;
       }
-      if (discovery == null) {
-        discovery = defaultHouseEdgeDiscovery();
+      if (improveTicks == null) {
+        improveTicks = 1;
       }
-      markets = sanitizeHouseEdgeMarkets(markets);
+      markets = sanitizeGabagoolMarkets(markets);
     }
   }
 
-  public record HouseEdgeDiscovery(
-      boolean enabled,
-      @NotNull List<String> queries,
-      @NotNull Boolean require15m,
-      @NotNull @Min(1) Integer maxMarkets,
-      @NotNull @PositiveOrZero BigDecimal minVolume,
-      @NotNull @Min(5) Long refreshSeconds
-  ) {
-    public HouseEdgeDiscovery {
-      queries = sanitizeStringList(queries);
-      if (require15m == null) {
-        require15m = true;
-      }
-      if (maxMarkets == null) {
-        maxMarkets = 3;
-      }
-      if (minVolume == null) {
-        minVolume = BigDecimal.ZERO;
-      }
-      if (refreshSeconds == null) {
-        refreshSeconds = 30L;
-      }
+  public record GabagoolMarket(
+      String slug,
+      String upTokenId,
+      String downTokenId,
+      String endTime  // ISO-8601 format
+  ) {}
+
+  private static List<GabagoolMarket> sanitizeGabagoolMarkets(List<GabagoolMarket> markets) {
+    if (markets == null || markets.isEmpty()) {
+      return List.of();
     }
+    return markets.stream()
+        .filter(Objects::nonNull)
+        .filter(m -> m.upTokenId() != null && !m.upTokenId().isBlank())
+        .filter(m -> m.downTokenId() != null && !m.downTokenId().isBlank())
+        .toList();
   }
 
-  public record HouseEdgeMarket(
-      String name,
-      String yesTokenId,
-      String noTokenId
-  ) {
-  }
 
 }

@@ -68,6 +68,29 @@ public class UserPositionAnalyticsController {
     return repository.upDown15mRealizedPnlByEntryBucket(username, bucketSeconds);
   }
 
+  @GetMapping("/complete-sets/summary")
+  public UserPositionAnalyticsRepository.CompleteSetSummary completeSetSummary(
+      @PathVariable("username") String username
+  ) {
+    return repository.completeSetSummary(username);
+  }
+
+  @GetMapping("/complete-sets/pairs")
+  public List<UserPositionAnalyticsRepository.CompleteSetPair> completeSetPairs(
+      @PathVariable("username") String username,
+      @RequestParam(name = "windowSeconds", required = false, defaultValue = "60") int windowSeconds,
+      @RequestParam(name = "limit", required = false, defaultValue = "100") int limit
+  ) {
+    return repository.completeSetPairs(username, windowSeconds, limit);
+  }
+
+  @GetMapping("/microstructure/summary")
+  public UserPositionAnalyticsRepository.MicrostructureSummary microstructureSummary(
+      @PathVariable("username") String username
+  ) {
+    return repository.microstructureSummary(username);
+  }
+
   private static UserPositionAnalyticsRepository.PositionState parseState(String raw) {
     if (raw == null) {
       return UserPositionAnalyticsRepository.PositionState.OPEN;
