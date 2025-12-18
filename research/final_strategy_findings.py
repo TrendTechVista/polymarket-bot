@@ -56,10 +56,10 @@ def main():
     markets = client.query_df("""
         SELECT 
             multiIf(
-                `u.market_slug` LIKE 'btc-updown-15m-%', '15min-BTC',
-                `u.market_slug` LIKE 'eth-updown-15m-%', '15min-ETH',
-                `u.market_slug` LIKE 'bitcoin-up-or-down-%', '1hour-BTC',
-                `u.market_slug` LIKE 'ethereum-up-or-down-%', '1hour-ETH',
+                market_slug LIKE 'btc-updown-15m-%', '15min-BTC',
+                market_slug LIKE 'eth-updown-15m-%', '15min-ETH',
+                market_slug LIKE 'bitcoin-up-or-down-%', '1hour-BTC',
+                market_slug LIKE 'ethereum-up-or-down-%', '1hour-ETH',
                 'other'
             ) as market_type,
             count() as trades,
@@ -115,7 +115,7 @@ def main():
 
     outcomes = client.query_df("""
         SELECT 
-            `u.outcome` as outcome,
+            outcome as outcome,
             count() as trades,
             round(sum((settle_price - price) * size), 2) as pnl,
             round(countIf((settle_price - price) * size > 0) * 100.0 / count(), 1) as win_rate
@@ -271,4 +271,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

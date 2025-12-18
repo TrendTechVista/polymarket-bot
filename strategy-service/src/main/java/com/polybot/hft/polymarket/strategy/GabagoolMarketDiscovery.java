@@ -59,11 +59,11 @@ public class GabagoolMarketDiscovery {
         return new ArrayList<>(activeMarkets);
     }
 
-    /**
-     * Refresh market discovery every 30 seconds.
-     */
-    @Scheduled(fixedDelay = 30_000, initialDelay = 5_000)
-    public void discoverMarkets() {
+  /**
+   * Refresh market discovery every 30 seconds.
+   */
+  @Scheduled(fixedDelay = 30_000, initialDelay = 5_000)
+  public void discoverMarkets() {
         if (!properties.strategy().gabagool().enabled()) {
             return;
         }
@@ -74,23 +74,33 @@ public class GabagoolMarketDiscovery {
             // Fetch all active events once and filter locally
             List<DiscoveredMarket> discovered = fetchActiveUpDownEvents();
 
-            // Filter to only active markets within trading window
-            // 15min markets: 5-20 min before end
-            // 1hour markets: 10-20 min before end (same timing pattern)
+            // Keep markets that are currently open.
+            //
+            // Empirical timing:
+            // - 15m series fills span ~0-15m before end
+            // - 1h series fills span ~0-60m before end
+            //
+            // So we should track the "current" market instances, not only the ones ending soon.
             Instant now = Instant.now();
-            Instant minEnd = now.plus(5, ChronoUnit.MINUTES);
-            Instant maxEnd = now.plus(20, ChronoUnit.MINUTES);
+            Instant maxEnd = now.plus(2, ChronoUnit.HOURS);
 
             List<DiscoveredMarket> active = discovered.stream()
                     .filter(m -> m.endTime() != null)
-                    .filter(m -> m.endTime().isAfter(minEnd) && m.endTime().isBefore(maxEnd))
+                    .filter(m -> m.endTime().isAfter(now))
+                    .filter(m -> m.endTime().isBefore(maxEnd))
+                    .filter(m -> {
+                        // Avoid tracking future market instances that haven't started trading yet.
+                        Duration duration = "updown-15m".equals(m.marketType()) ? Duration.ofMinutes(15) : Duration.ofHours(1);
+                        Instant startTime = m.endTime().minus(duration);
+                        return !now.isBefore(startTime);
+                    })
                     .filter(m -> !m.closed())
                     .toList();
 
             activeMarkets.clear();
             activeMarkets.addAll(active);
 
-            log.info("GABAGOOL DISCOVERY: Found {} total, {} in 5-20 min window", discovered.size(), active.size());
+            log.info("GABAGOOL DISCOVERY: Found {} total, {} active/open", discovered.size(), active.size());
 
             if (!active.isEmpty()) {
                 for (DiscoveredMarket m : active) {
@@ -98,7 +108,7 @@ public class GabagoolMarketDiscovery {
                     log.info("  - {} [{}] (ends in {}min)", m.slug(), m.marketType(), minutesToEnd);
                 }
             } else if (!discovered.isEmpty()) {
-                log.info("  (markets found but outside 5-20 min window, waiting...)");
+                log.info("  (markets found but none currently open, waiting...)");
             } else {
                 log.info("  (no matching BTC/ETH Up/Down markets found from API)");
             }
@@ -144,8 +154,10 @@ public class GabagoolMarketDiscovery {
 
     private static List<String> candidateUpDown15mSlugs(String assetPrefix, Instant now) {
         long nowSec = now.getEpochSecond();
-        long from = nowSec - Duration.ofMinutes(10).toSeconds();
-        long to = nowSec + Duration.ofMinutes(5).toSeconds();
+        // Include current + previous interval, plus a small lookahead, so we always
+        // cover the active 15m market even if it's near the end of its lifecycle.
+        long from = nowSec - Duration.ofMinutes(30).toSeconds();
+        long to = nowSec + Duration.ofMinutes(15).toSeconds();
 
         long startFrom = (from / 900L) * 900L;
         long startTo = (to / 900L) * 900L;

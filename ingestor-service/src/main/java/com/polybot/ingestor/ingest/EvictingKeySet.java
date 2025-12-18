@@ -46,6 +46,17 @@ public final class EvictingKeySet {
     return map.containsKey(k);
   }
 
+  public synchronized boolean remove(String key) {
+    if (key == null) {
+      return false;
+    }
+    String k = key.trim();
+    if (k.isEmpty()) {
+      return false;
+    }
+    return map.remove(k) != null;
+  }
+
   public synchronized int size() {
     return map.size();
   }

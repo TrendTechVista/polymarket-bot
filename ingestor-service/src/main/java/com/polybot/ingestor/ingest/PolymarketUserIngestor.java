@@ -297,6 +297,11 @@ public class PolymarketUserIngestor {
       String side = trade.path("side").asText("");
       String eventKey = buildTradeEventKey(t.proxyAddress, tx, asset, side, tsSeconds);
 
+      // Always enqueue Polygon receipts for observed tx hashes, even if we dedupe the trade event,
+      // so turning receipts on later (or restarting the receipt ingestor) still backfills receipts
+      // for recently-seen trades.
+      polygonTxReceipts.onUserTrade(t.username, t.proxyAddress, eventKey, tx);
+
       if (!seenTradeKeys.add(eventKey)) {
         continue;
       }
@@ -311,7 +316,6 @@ public class PolymarketUserIngestor {
       published++;
 
       marketContext.onUserTrade(t.username, t.proxyAddress, eventKey, ts, trade);
-      polygonTxReceipts.onUserTrade(t.username, t.proxyAddress, eventKey, tx);
     }
     return published;
   }

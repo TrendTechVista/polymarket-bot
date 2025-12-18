@@ -3,6 +3,7 @@ package com.polybot.hft.polymarket.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.polybot.hft.config.HftProperties;
 import com.polybot.hft.polymarket.clob.PolymarketClobClient;
+import com.polybot.hft.polymarket.data.PolymarketDataApiClient;
 import com.polybot.hft.polymarket.gamma.PolymarketGammaClient;
 import com.polybot.hft.polymarket.http.PolymarketHttpTransport;
 import com.polybot.hft.polymarket.http.RequestRateLimiter;
@@ -92,5 +93,13 @@ public class PolymarketConfiguration {
       ObjectMapper objectMapper
   ) {
     return new PolymarketGammaClient(URI.create(properties.polymarket().gammaUrl()), transport, objectMapper);
+  }
+
+  @Bean
+  public PolymarketDataApiClient polymarketDataApiClient(
+      HftProperties properties,
+      PolymarketHttpTransport transport
+  ) {
+    return new PolymarketDataApiClient(URI.create(properties.polymarket().dataApiUrl()), transport);
   }
 }

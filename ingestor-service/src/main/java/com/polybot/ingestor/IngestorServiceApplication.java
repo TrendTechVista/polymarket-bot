@@ -1,5 +1,6 @@
 package com.polybot.ingestor;
 
+import com.polybot.hft.config.HftProperties;
 import com.polybot.hft.events.HftEventsConfiguration;
 import com.polybot.hft.events.HftEventsProperties;
 import com.polybot.hft.events.kafka.KafkaHftEventsConfiguration;
@@ -10,7 +11,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@ConfigurationPropertiesScan(basePackageClasses = {IngestorServiceApplication.class, HftEventsProperties.class})
+@ConfigurationPropertiesScan(basePackageClasses = {IngestorServiceApplication.class, HftEventsProperties.class, HftProperties.class})
 @EnableScheduling
 @Import({HftEventsConfiguration.class, KafkaHftEventsConfiguration.class})
 public class IngestorServiceApplication {

@@ -1,8 +1,11 @@
 package com.polybot.ingestor.web;
 
 import com.polybot.hft.events.HftEventsProperties;
+import com.polybot.hft.polymarket.ws.ClobMarketWebSocketClient;
 import com.polybot.ingestor.config.IngestorProperties;
+import com.polybot.ingestor.config.MarketWsProperties;
 import com.polybot.ingestor.ingest.PolymarketMarketContextIngestor;
+import com.polybot.ingestor.ingest.PolymarketUpDownMarketWsIngestor;
 import com.polybot.ingestor.ingest.PolymarketUserIngestor;
 import com.polybot.ingestor.ingest.PolygonTxReceiptIngestor;
 import lombok.RequiredArgsConstructor;
@@ -18,9 +21,12 @@ public class IngestorController {
 
   private final Environment env;
   private final IngestorProperties ingestorProperties;
+  private final MarketWsProperties marketWsProperties;
   private final HftEventsProperties hftEventsProperties;
   private final PolymarketUserIngestor ingestor;
   private final PolymarketMarketContextIngestor marketContext;
+  private final PolymarketUpDownMarketWsIngestor marketWsIngestor;
+  private final ClobMarketWebSocketClient marketWsClient;
   private final PolygonTxReceiptIngestor polygonTxReceipts;
 
   @GetMapping("/status")
@@ -40,6 +46,14 @@ public class IngestorController {
         ingestorProperties.marketContext().enabled(),
         ingestorProperties.marketContext().gammaApiBaseUrl().toString(),
         ingestorProperties.marketContext().clobRestBaseUrl().toString(),
+        marketWsProperties.enabled(),
+        marketWsProperties.discoveryIntervalSeconds(),
+        marketWsIngestor.cycles(),
+        marketWsIngestor.marketsDiscovered(),
+        marketWsIngestor.slugFetchFailures(),
+        marketWsClient.isStarted(),
+        marketWsClient.subscribedAssetCount(),
+        marketWsClient.topOfBookCount(),
         hftEventsProperties.enabled(),
         hftEventsProperties.topic(),
         ingestor.polls(),
@@ -60,7 +74,10 @@ public class IngestorController {
         polygonTxReceipts.publishedReceipts(),
         polygonTxReceipts.failures(),
         polygonTxReceipts.lastPollAtMillis(),
-        polygonTxReceipts.queuedTxCount()
+        polygonTxReceipts.queuedTxCount(),
+        polygonTxReceipts.inFlightTxCount(),
+        polygonTxReceipts.receiptWorkers(),
+        polygonTxReceipts.blockTimestampCacheSize()
     );
   }
 
@@ -79,6 +96,14 @@ public class IngestorController {
       boolean marketContextEnabled,
       String gammaApiBaseUrl,
       String clobRestBaseUrl,
+      boolean marketWsEnabled,
+      int marketWsDiscoveryIntervalSeconds,
+      long marketWsCycles,
+      long marketWsMarketsDiscovered,
+      long marketWsSlugFetchFailures,
+      boolean marketWsClientStarted,
+      int marketWsSubscribedAssets,
+      int marketWsTopOfBookAssets,
       boolean kafkaEventsEnabled,
       String kafkaTopic,
       long polls,
@@ -99,7 +124,10 @@ public class IngestorController {
       long polygonTxPublishedReceipts,
       long polygonTxFailures,
       long polygonTxLastPollAtMillis,
-      int polygonTxQueuedCount
+      int polygonTxQueuedCount,
+      int polygonTxInFlightCount,
+      int polygonTxReceiptWorkers,
+      int polygonTxBlockTimestampCacheSize
   ) {
   }
 }

@@ -10,7 +10,14 @@ import org.springframework.validation.annotation.Validated;
 public record HftEventsProperties(
     @NotNull Boolean enabled,
     String topic,
-    @NotNull @PositiveOrZero Long marketWsTobMinIntervalMillis
+    @NotNull @PositiveOrZero Long marketWsTobMinIntervalMillis,
+    /**
+     * When enabled, republish the persisted WS TOB cache on startup.
+     *
+     * This helps maintain ASOF join coverage across restarts (at the cost of using older book snapshots until fresh
+     * WS updates arrive).
+     */
+    @NotNull Boolean marketWsCachePublishOnStart
 ) {
   public HftEventsProperties {
     if (enabled == null) {
@@ -22,6 +29,8 @@ public record HftEventsProperties(
     if (marketWsTobMinIntervalMillis == null) {
       marketWsTobMinIntervalMillis = 250L;
     }
+    if (marketWsCachePublishOnStart == null) {
+      marketWsCachePublishOnStart = false;
+    }
   }
 }
-

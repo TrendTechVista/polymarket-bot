@@ -14,7 +14,15 @@ public record PolygonProperties(
     URI rpcUrl,
     @NotNull @Min(1) Integer pollIntervalMillis,
     @NotNull @Min(1) Integer maxReceiptsPerPoll,
-    @NotNull @Min(0) Long requestDelayMillis
+    @NotNull @Min(0) Long requestDelayMillis,
+    /**
+     * Concurrent workers for receipt fetching. When 1, behavior is essentially single-threaded.
+     */
+    @NotNull @Min(1) Integer receiptWorkers,
+    /**
+     * Cache size for blockNumber->timestamp lookups to avoid repeated eth_getBlockByNumber calls.
+     */
+    @NotNull @Min(100) Integer blockTimestampCacheSize
 ) {
   public PolygonProperties {
     if (enabled == null) {
@@ -32,6 +40,11 @@ public record PolygonProperties(
     if (requestDelayMillis == null) {
       requestDelayMillis = 100L;
     }
+    if (receiptWorkers == null) {
+      receiptWorkers = 1;
+    }
+    if (blockTimestampCacheSize == null) {
+      blockTimestampCacheSize = 50_000;
+    }
   }
 }
-

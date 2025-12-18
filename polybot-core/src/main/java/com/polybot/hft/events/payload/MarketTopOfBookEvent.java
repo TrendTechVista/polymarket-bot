@@ -6,10 +6,11 @@ import java.time.Instant;
 public record MarketTopOfBookEvent(
     String assetId,
     BigDecimal bestBid,
+    BigDecimal bestBidSize,
     BigDecimal bestAsk,
+    BigDecimal bestAskSize,
     BigDecimal lastTradePrice,
     Instant updatedAt,
     Instant lastTradeAt
 ) {
 }
-

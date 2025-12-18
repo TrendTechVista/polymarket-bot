@@ -165,20 +165,16 @@ This project uses it to keep a lightweight top-of-book cache; order placement is
 
 **Strategy Summary:**
 - **Markets:** Bitcoin + Ethereum 15-minute and 1-hour Up/Down binary markets
-- **Timing:** Entry window 10-15 minutes before market resolution
-- **Direction:** DOWN bias (55.3% win rate vs 47.6% for UP)
-- **Execution:** Maker orders at bid+1 tick (never cross spread)
-
-**Expected Performance (Monte Carlo, 20K iterations):**
-- gabagool22 actual: $1,360 median, 0.99 Sharpe
-- Our strategy (maker): $9,504 median, 6.91 Sharpe
-- Improvement: 7x PnL, 7x Sharpe, 3x lower drawdown
+- **Timing:** Fills span most of each market lifetime (15m: 0–15m, 1h: 0–60m); control the active window via `min-seconds-to-end`/`max-seconds-to-end`
+- **Direction:** Down outcomes are materially more profitable in the current dataset; replicate the full mix first, then consider tilts
+- **Execution:** Maker-like fills matter; crossing the spread is consistently worse in backtests (and TOB staleness can mislead)
+- **On-chain routing:** A large fraction of trades are “complete-set-like” matches (see `research/onchain_match_report.py`)
 
 Config:
 - `hft.polymarket.market-ws-enabled=true`
 - `hft.strategy.gabagool.enabled=true`
-- `hft.strategy.gabagool.min-seconds-to-end=600` (10 min)
-- `hft.strategy.gabagool.max-seconds-to-end=900` (15 min)
+- `hft.strategy.gabagool.min-seconds-to-end=0`
+- `hft.strategy.gabagool.max-seconds-to-end=3600`
 - `hft.strategy.gabagool.quote-size=10` (USDC notional per order; approx. `entryPrice * shares`)
 - Optional bankroll sizing: `hft.strategy.gabagool.bankroll-usd`, `hft.strategy.gabagool.quote-size-bankroll-fraction`, `hft.strategy.gabagool.max-order-bankroll-fraction`, `hft.strategy.gabagool.max-total-bankroll-fraction`
 

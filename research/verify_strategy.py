@@ -13,19 +13,37 @@ print("=" * 80)
 
 client = clickhouse_connect.get_client(host='localhost', port=8123, database='polybot')
 
+tables = set(r[0] for r in client.query("SHOW TABLES").result_rows)
+if "user_trade_enriched_v4" in tables:
+    view = "user_trade_enriched_v4"
+    has_ws = True
+elif "user_trade_enriched_v3" in tables:
+    view = "user_trade_enriched_v3"
+    has_ws = True
+else:
+    view = "user_trade_enriched_v2"
+    has_ws = False
+
+mid_expr = "coalesce(ws_mid, mid)" if has_ws else "mid"
+bid_expr = "coalesce(ws_best_bid_price, best_bid_price)" if has_ws else "best_bid_price"
+ask_expr = "coalesce(ws_best_ask_price, best_ask_price)" if has_ws else "best_ask_price"
+exec_col = "ws_exec_type" if has_ws else "exec_type"
+
+print(f"Using view: {view} (exec={exec_col})")
+
 # 1. Total data overview
 print("\n" + "=" * 60)
 print("1. DATA OVERVIEW")
 print("=" * 60)
 
-r = client.query("""
+r = client.query(f"""
     SELECT 
         count() as total,
         countIf(settle_price IS NOT NULL) as resolved,
         round(sum(size * price), 2) as volume,
         min(ts) as first_ts,
         max(ts) as last_ts
-    FROM user_trade_enriched_v2
+    FROM {view}
     WHERE username = 'gabagool22'
 """)
 row = r.result_rows[0]
@@ -39,21 +57,21 @@ print("\n" + "=" * 60)
 print("2. MARKET + OUTCOME BREAKDOWN")
 print("=" * 60)
 
-r = client.query("""
+r = client.query(f"""
     SELECT 
         multiIf(
-            `u.market_slug` LIKE 'btc-updown-15m-%', '15min-BTC',
-            `u.market_slug` LIKE 'eth-updown-15m-%', '15min-ETH',
-            `u.market_slug` LIKE 'bitcoin-up-or-down-%', '1hour-BTC',
-            `u.market_slug` LIKE 'ethereum-up-or-down-%', '1hour-ETH',
+            market_slug LIKE 'btc-updown-15m-%', '15min-BTC',
+            market_slug LIKE 'eth-updown-15m-%', '15min-ETH',
+            market_slug LIKE 'bitcoin-up-or-down-%', '1hour-BTC',
+            market_slug LIKE 'ethereum-up-or-down-%', '1hour-ETH',
             'other'
         ) as mtype,
-        lower(`u.outcome`) as outcome,
+        lower(outcome) as outcome,
         count() as trades,
         round(sumIf((settle_price - price) * size, settle_price IS NOT NULL), 2) as pnl,
         round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0) * 100.0 / 
               nullIf(countIf(settle_price IS NOT NULL), 0), 2) as win_rate
-    FROM user_trade_enriched_v2
+    FROM {view}
     WHERE username = 'gabagool22'
     GROUP BY mtype, outcome
     ORDER BY mtype, outcome
@@ -93,9 +111,9 @@ for mtype in ['15min-BTC', '15min-ETH', '1hour-BTC', '1hour-ETH']:
             round(sumIf((settle_price - price) * size, settle_price IS NOT NULL), 2) as pnl,
             round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0) * 100.0 / 
                   nullIf(countIf(settle_price IS NOT NULL), 0), 2) as win_rate
-        FROM user_trade_enriched_v2
+        FROM {view}
         WHERE username = 'gabagool22'
-          AND `u.market_slug` LIKE '{like_pattern}'
+          AND market_slug LIKE '{like_pattern}'
           AND seconds_to_end IS NOT NULL
         GROUP BY bucket
         ORDER BY 
@@ -123,22 +141,22 @@ print("\n" + "=" * 60)
 print("4. DOWN vs UP WIN RATE BY MARKET")
 print("=" * 60)
 
-r = client.query("""
+r = client.query(f"""
     SELECT 
         multiIf(
-            `u.market_slug` LIKE 'btc-updown-15m-%', '15min-BTC',
-            `u.market_slug` LIKE 'eth-updown-15m-%', '15min-ETH',
-            `u.market_slug` LIKE 'bitcoin-up-or-down-%', '1hour-BTC',
-            `u.market_slug` LIKE 'ethereum-up-or-down-%', '1hour-ETH',
+            market_slug LIKE 'btc-updown-15m-%', '15min-BTC',
+            market_slug LIKE 'eth-updown-15m-%', '15min-ETH',
+            market_slug LIKE 'bitcoin-up-or-down-%', '1hour-BTC',
+            market_slug LIKE 'ethereum-up-or-down-%', '1hour-ETH',
             'other'
         ) as mtype,
-        round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0 AND lower(`u.outcome`) = 'down') * 100.0 / 
-              nullIf(countIf(settle_price IS NOT NULL AND lower(`u.outcome`) = 'down'), 0), 2) as down_win_rate,
-        round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0 AND lower(`u.outcome`) = 'up') * 100.0 / 
-              nullIf(countIf(settle_price IS NOT NULL AND lower(`u.outcome`) = 'up'), 0), 2) as up_win_rate,
-        round(sumIf((settle_price - price) * size, settle_price IS NOT NULL AND lower(`u.outcome`) = 'down'), 2) as down_pnl,
-        round(sumIf((settle_price - price) * size, settle_price IS NOT NULL AND lower(`u.outcome`) = 'up'), 2) as up_pnl
-    FROM user_trade_enriched_v2
+        round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0 AND lower(outcome) = 'down') * 100.0 / 
+              nullIf(countIf(settle_price IS NOT NULL AND lower(outcome) = 'down'), 0), 2) as down_win_rate,
+        round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0 AND lower(outcome) = 'up') * 100.0 / 
+              nullIf(countIf(settle_price IS NOT NULL AND lower(outcome) = 'up'), 0), 2) as up_win_rate,
+        round(sumIf((settle_price - price) * size, settle_price IS NOT NULL AND lower(outcome) = 'down'), 2) as down_pnl,
+        round(sumIf((settle_price - price) * size, settle_price IS NOT NULL AND lower(outcome) = 'up'), 2) as up_pnl
+    FROM {view}
     WHERE username = 'gabagool22'
     GROUP BY mtype
     ORDER BY down_pnl DESC
@@ -154,16 +172,16 @@ print("\n" + "=" * 60)
 print("5. EXECUTION ANALYSIS")
 print("=" * 60)
 
-r = client.query("""
+r = client.query(f"""
     SELECT 
         count() as trades_with_mid,
         round(sumIf((settle_price - price) * size, settle_price IS NOT NULL), 2) as actual_pnl,
-        round(sumIf((settle_price - mid) * size, settle_price IS NOT NULL AND mid > 0), 2) as mid_pnl,
-        round(sumIf((settle_price - best_bid_price) * size, settle_price IS NOT NULL AND best_bid_price > 0), 2) as maker_pnl,
-        round(sumIf((settle_price - best_ask_price) * size, settle_price IS NOT NULL AND best_ask_price > 0), 2) as taker_pnl
-    FROM user_trade_enriched_v2
+        round(sumIf((settle_price - {mid_expr}) * size, settle_price IS NOT NULL AND {mid_expr} > 0), 2) as mid_pnl,
+        round(sumIf((settle_price - {bid_expr}) * size, settle_price IS NOT NULL AND {bid_expr} > 0), 2) as maker_pnl,
+        round(sumIf((settle_price - {ask_expr}) * size, settle_price IS NOT NULL AND {ask_expr} > 0), 2) as taker_pnl
+    FROM {view}
     WHERE username = 'gabagool22'
-      AND mid > 0
+      AND {mid_expr} > 0
 """)
 row = r.result_rows[0]
 print(f"Trades with TOB:  {row[0]:,}")

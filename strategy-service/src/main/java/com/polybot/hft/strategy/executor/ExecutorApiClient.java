@@ -1,10 +1,13 @@
 package com.polybot.hft.strategy.executor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.polybot.hft.config.HftProperties;
 import com.polybot.hft.domain.HftHeaders;
+import com.polybot.hft.polymarket.api.PolymarketAccountResponse;
 import com.polybot.hft.polymarket.api.LimitOrderRequest;
 import com.polybot.hft.polymarket.api.OrderSubmissionResult;
+import com.polybot.hft.polymarket.data.PolymarketPosition;
 import com.polybot.hft.polymarket.http.HttpRequestFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -15,6 +18,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
@@ -51,6 +55,35 @@ public class ExecutorApiClient {
     String path = "/api/polymarket/orders/" + orderId;
     HttpRequest request = baseRequest(path, Map.of()).DELETE().timeout(HTTP_TIMEOUT).header("Accept", "application/json").build();
     sendString(request);
+  }
+
+  public JsonNode getOrder(String orderId) {
+    String path = "/api/polymarket/orders/" + orderId;
+    HttpRequest request = baseRequest(path, Map.of()).GET().timeout(HTTP_TIMEOUT).header("Accept", "application/json").build();
+    return sendJson(request, JsonNode.class);
+  }
+
+  public PolymarketAccountResponse getAccount() {
+    String path = "/api/polymarket/account";
+    HttpRequest request = baseRequest(path, Map.of()).GET().timeout(HTTP_TIMEOUT).header("Accept", "application/json").build();
+    return sendJson(request, PolymarketAccountResponse.class);
+  }
+
+  public PolymarketPosition[] getPositions(int limit, int offset) {
+    return getPositions(null, limit, offset);
+  }
+
+  public PolymarketPosition[] getPositions(String user, int limit, int offset) {
+    String path = "/api/polymarket/positions";
+    Map<String, String> query = new LinkedHashMap<>();
+    if (user != null && !user.isBlank()) {
+      query.put("user", user);
+    }
+    query.put("limit", Integer.toString(Math.max(1, limit)));
+    query.put("offset", Integer.toString(Math.max(0, offset)));
+
+    HttpRequest request = baseRequest(path, query).GET().timeout(HTTP_TIMEOUT).header("Accept", "application/json").build();
+    return sendJson(request, PolymarketPosition[].class);
   }
 
   private HttpRequest.Builder baseRequest(String path, Map<String, String> query) {
@@ -97,4 +130,3 @@ public class ExecutorApiClient {
     }
   }
 }
-

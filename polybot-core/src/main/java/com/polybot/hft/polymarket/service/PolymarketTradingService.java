@@ -22,6 +22,9 @@ import org.springframework.stereotype.Service;
 import org.web3j.crypto.Credentials;
 
 import java.math.BigDecimal;
+import java.util.UUID;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Service
 @Slf4j
@@ -71,7 +74,13 @@ public class PolymarketTradingService {
     );
 
     if (properties.mode() == HftProperties.TradingMode.PAPER) {
-      return new OrderSubmissionResult(properties.mode(), order, null);
+      String paperOrderId = "paper-" + UUID.randomUUID();
+      JsonNode paperResp = objectMapper.createObjectNode()
+          .put("mode", properties.mode().name())
+          .put("orderID", paperOrderId)
+          .put("orderId", paperOrderId)
+          .put("status", "OPEN");
+      return new OrderSubmissionResult(properties.mode(), order, paperResp);
     }
 
     ApiCreds creds = authContext.requireApiCreds();
@@ -106,7 +115,13 @@ public class PolymarketTradingService {
     );
 
     if (properties.mode() == HftProperties.TradingMode.PAPER) {
-      return new OrderSubmissionResult(properties.mode(), order, null);
+      String paperOrderId = "paper-" + UUID.randomUUID();
+      JsonNode paperResp = objectMapper.createObjectNode()
+          .put("mode", properties.mode().name())
+          .put("orderID", paperOrderId)
+          .put("orderId", paperOrderId)
+          .put("status", "OPEN");
+      return new OrderSubmissionResult(properties.mode(), order, paperResp);
     }
 
     ApiCreds creds = authContext.requireApiCreds();
@@ -132,6 +147,39 @@ public class PolymarketTradingService {
     Credentials signer = authContext.requireSignerCredentials();
     ApiCreds creds = authContext.requireApiCreds();
     return clobClient.cancelOrder(signer, creds, orderId);
+  }
+
+  public JsonNode getOrder(String orderId) {
+    if (properties.mode() == HftProperties.TradingMode.PAPER) {
+      return objectMapper.createObjectNode()
+          .put("mode", properties.mode().name())
+          .put("orderId", orderId);
+    }
+    Credentials signer = authContext.requireSignerCredentials();
+    ApiCreds creds = authContext.requireApiCreds();
+    return clobClient.getOrder(signer, creds, orderId);
+  }
+
+  public JsonNode getOrders(Map<String, String> query) {
+    if (properties.mode() == HftProperties.TradingMode.PAPER) {
+      return objectMapper.createObjectNode()
+          .put("mode", properties.mode().name())
+          .set("data", objectMapper.createArrayNode());
+    }
+    Credentials signer = authContext.requireSignerCredentials();
+    ApiCreds creds = authContext.requireApiCreds();
+    return clobClient.getOrders(signer, creds, query == null ? Map.of() : new LinkedHashMap<>(query));
+  }
+
+  public JsonNode getTrades(Map<String, String> query) {
+    if (properties.mode() == HftProperties.TradingMode.PAPER) {
+      return objectMapper.createObjectNode()
+          .put("mode", properties.mode().name())
+          .set("data", objectMapper.createArrayNode());
+    }
+    Credentials signer = authContext.requireSignerCredentials();
+    ApiCreds creds = authContext.requireApiCreds();
+    return clobClient.getTrades(signer, creds, query == null ? Map.of() : new LinkedHashMap<>(query));
   }
 
   public PolymarketHealthResponse getHealth(boolean deep, String tokenId) {

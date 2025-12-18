@@ -19,8 +19,13 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -53,6 +58,7 @@ public class ClobMarketWebSocketClient {
   private final AtomicLong priceChangeMessages = new AtomicLong(0);
   private final AtomicLong lastTradeMessages = new AtomicLong(0);
   private final AtomicLong lastMessageAtMillis = new AtomicLong(0);
+  private final AtomicLong lastReconnectAttemptAtMillis = new AtomicLong(0);
   private final AtomicBoolean maintenanceScheduled = new AtomicBoolean(false);
 
   private final ScheduledExecutorService pingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -171,9 +177,14 @@ public class ClobMarketWebSocketClient {
     if (!polymarket.marketWsEnabled()) {
       return;
     }
+    maybeLoadCacheFromDisk();
     List<String> assets = polymarket.marketAssetIds();
     if (assets != null && !assets.isEmpty()) {
       subscribeAssets(assets);
+      return;
+    }
+    if (!subscribedAssetIds.isEmpty()) {
+      log.info("Market WS enabled; warm-started with {} cached subscriptions.", subscribedAssetIds.size());
       return;
     }
     log.info("Market WS enabled; waiting for market asset subscriptions.");
@@ -192,12 +203,27 @@ public class ClobMarketWebSocketClient {
       boolean changed = subscribedAssetIds.addAll(sanitized);
       if (!started) {
         connectLocked();
-        changed = true;
+        return;
       }
       if (changed) {
-        sendSubscribeLocked();
+        reconnectLocked();
       }
     }
+  }
+
+  private void reconnectLocked() {
+    WebSocket ws = this.webSocket;
+    if (ws != null) {
+      try {
+        ws.sendClose(WebSocket.NORMAL_CLOSURE, "resubscribe").join();
+      } catch (Exception ignored) {
+      }
+    }
+    this.webSocket = null;
+    started = false;
+    lastMessageAtMillis.set(0);
+    lastTobEventAtMillisByAssetId.clear();
+    connectLocked();
   }
 
   private void connectLocked() {
@@ -221,11 +247,18 @@ public class ClobMarketWebSocketClient {
       }, 10, 10, TimeUnit.SECONDS);
 
       pingExecutor.scheduleAtFixedRate(this::logHeartbeat, HEARTBEAT_LOG_INTERVAL_SECONDS, HEARTBEAT_LOG_INTERVAL_SECONDS, TimeUnit.SECONDS);
+      pingExecutor.scheduleAtFixedRate(this::maintainConnectionSafely, 5, 5, TimeUnit.SECONDS);
+
+      long flushMillis = properties.polymarket().marketWsCacheFlushMillis();
+      if (flushMillis > 0 && isCachePersistenceEnabled()) {
+        pingExecutor.scheduleAtFixedRate(this::flushCacheSafely, flushMillis, flushMillis, TimeUnit.MILLISECONDS);
+      }
     }
   }
 
   @PreDestroy
   void shutdown() {
+    flushCacheSafely();
     WebSocket ws = this.webSocket;
     if (ws != null) {
       try {
@@ -259,6 +292,7 @@ public class ClobMarketWebSocketClient {
 
   private void handleMessage(String message) {
     if ("PONG".equalsIgnoreCase(message) || "PING".equalsIgnoreCase(message)) {
+      lastMessageAtMillis.set(System.currentTimeMillis());
       return;
     }
     messagesReceived.incrementAndGet();
@@ -298,6 +332,51 @@ public class ClobMarketWebSocketClient {
       }
       default -> {
       }
+    }
+  }
+
+  private void maintainConnectionSafely() {
+    try {
+      maintainConnection();
+    } catch (Exception e) {
+      log.debug("Market WS maintenance failed: {}", e.toString());
+    }
+  }
+
+  private void maintainConnection() {
+    if (!properties.polymarket().marketWsEnabled()) {
+      return;
+    }
+    if (subscribedAssetIds.isEmpty()) {
+      return;
+    }
+
+    long staleTimeoutMillis = properties.polymarket().marketWsStaleTimeoutMillis();
+    long reconnectBackoffMillis = properties.polymarket().marketWsReconnectBackoffMillis();
+    long now = System.currentTimeMillis();
+
+    boolean disconnected = !started || webSocket == null;
+    long lastAt = lastMessageAtMillis.get();
+    boolean stale = staleTimeoutMillis > 0 && lastAt > 0 && (now - lastAt) > staleTimeoutMillis;
+    if (!disconnected && !stale) {
+      return;
+    }
+
+    long prevAttempt = lastReconnectAttemptAtMillis.get();
+    if (reconnectBackoffMillis > 0 && prevAttempt > 0 && now - prevAttempt < reconnectBackoffMillis) {
+      return;
+    }
+    lastReconnectAttemptAtMillis.set(now);
+
+    String reason = disconnected ? "disconnected" : "stale";
+    long lastAgo = lastAt <= 0 ? -1 : now - lastAt;
+    log.warn("Market WS reconnecting (reason={}, subscribed={}, tobKnown={}, lastMsgAgoMs={})", reason, subscribedAssetIds.size(), topOfBookByAssetId.size(), lastAgo);
+
+    synchronized (this) {
+      if (subscribedAssetIds.isEmpty()) {
+        return;
+      }
+      reconnectLocked();
     }
   }
 
@@ -419,7 +498,9 @@ public class ClobMarketWebSocketClient {
     events.publish(tob.updatedAt(), HftEventTypes.MARKET_WS_TOB, assetId, new MarketTopOfBookEvent(
         assetId,
         tob.bestBid(),
+        tob.bestBidSize(),
         tob.bestAsk(),
+        tob.bestAskSize(),
         tob.lastTradePrice(),
         tob.updatedAt(),
         tob.lastTradeAt()
@@ -427,6 +508,110 @@ public class ClobMarketWebSocketClient {
   }
 
   private record TopLevel(BigDecimal price, BigDecimal size) {}
+
+  private boolean isCachePersistenceEnabled() {
+    String path = properties.polymarket().marketWsCachePath();
+    return path != null && !path.isBlank();
+  }
+
+  private void maybeLoadCacheFromDisk() {
+    if (!isCachePersistenceEnabled()) {
+      return;
+    }
+    String pathStr = properties.polymarket().marketWsCachePath();
+    Path path;
+    try {
+      path = Path.of(pathStr);
+    } catch (Exception e) {
+      log.warn("Market WS cache path is invalid: {}", pathStr);
+      return;
+    }
+    if (!Files.exists(path)) {
+      return;
+    }
+    try {
+      String json = Files.readString(path);
+      if (json == null || json.isBlank()) {
+        return;
+      }
+      MarketWsCacheSnapshot snapshot = objectMapper.readValue(json, MarketWsCacheSnapshot.class);
+      if (snapshot == null || snapshot.topOfBookByAssetId() == null || snapshot.topOfBookByAssetId().isEmpty()) {
+        return;
+      }
+      topOfBookByAssetId.putAll(snapshot.topOfBookByAssetId());
+      log.info("Loaded market WS TOB cache from {} (assets={})", pathStr, snapshot.topOfBookByAssetId().size());
+
+      if (Boolean.TRUE.equals(eventsProperties.marketWsCachePublishOnStart()) && events.isEnabled()) {
+        for (Map.Entry<String, TopOfBook> e : snapshot.topOfBookByAssetId().entrySet()) {
+          if (e == null) {
+            continue;
+          }
+          String assetId = e.getKey();
+          TopOfBook tob = e.getValue();
+          if (assetId == null || assetId.isBlank() || tob == null) {
+            continue;
+          }
+          maybePublishTopOfBook(assetId, tob);
+        }
+        log.info("Republished {} cached market WS TOBs on startup", snapshot.topOfBookByAssetId().size());
+      }
+
+      // Optional warm-start: if no asset list was configured, reuse the last subscribed set to connect immediately.
+      if (properties.polymarket().marketAssetIds().isEmpty()
+          && snapshot.subscribedAssetIds() != null
+          && !snapshot.subscribedAssetIds().isEmpty()
+          && subscribedAssetIds.isEmpty()) {
+        subscribeAssets(snapshot.subscribedAssetIds());
+      }
+    } catch (Exception e) {
+      log.warn("Failed to load market WS TOB cache from {}: {}", pathStr, e.getMessage());
+    }
+  }
+
+  private void flushCacheSafely() {
+    if (!isCachePersistenceEnabled()) {
+      return;
+    }
+    try {
+      flushCacheToDisk();
+    } catch (Exception e) {
+      log.debug("Market WS cache flush failed: {}", e.getMessage());
+    }
+  }
+
+  private void flushCacheToDisk() throws Exception {
+    String pathStr = properties.polymarket().marketWsCachePath();
+    if (pathStr == null || pathStr.isBlank()) {
+      return;
+    }
+
+    Path path = Path.of(pathStr);
+    Path parent = path.getParent();
+    if (parent != null) {
+      Files.createDirectories(parent);
+    }
+
+    MarketWsCacheSnapshot snapshot = new MarketWsCacheSnapshot(
+        Instant.now(clock),
+        subscribedAssetIds.stream().sorted().toList(),
+        new HashMap<>(topOfBookByAssetId)
+    );
+
+    String json = objectMapper.writeValueAsString(snapshot);
+    Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
+    Files.writeString(tmp, json, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+    try {
+      Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+    } catch (Exception e) {
+      Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
+    }
+  }
+
+  private record MarketWsCacheSnapshot(
+      Instant snapshotAt,
+      List<String> subscribedAssetIds,
+      Map<String, TopOfBook> topOfBookByAssetId
+  ) {}
 
   private final class Listener implements WebSocket.Listener {
     private final StringBuilder buf = new StringBuilder(8192);
@@ -438,6 +623,7 @@ public class ClobMarketWebSocketClient {
     public void onOpen(WebSocket webSocket) {
       log.info("CLOB market websocket opened");
       ClobMarketWebSocketClient.this.webSocket = webSocket;
+      lastMessageAtMillis.set(System.currentTimeMillis());
       sendSubscribeLocked();
       webSocket.request(1);
     }
@@ -457,16 +643,20 @@ public class ClobMarketWebSocketClient {
     @Override
     public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
       log.warn("CLOB market websocket closed (status={}, reason={})", statusCode, reason);
-      ClobMarketWebSocketClient.this.webSocket = null;
-      started = false;
+      if (ClobMarketWebSocketClient.this.webSocket == webSocket) {
+        ClobMarketWebSocketClient.this.webSocket = null;
+        started = false;
+      }
       return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
     }
 
     @Override
     public void onError(WebSocket webSocket, Throwable error) {
       log.warn("CLOB market websocket error: {}", error.toString());
-      ClobMarketWebSocketClient.this.webSocket = null;
-      started = false;
+      if (ClobMarketWebSocketClient.this.webSocket == webSocket) {
+        ClobMarketWebSocketClient.this.webSocket = null;
+        started = false;
+      }
     }
   }
 }

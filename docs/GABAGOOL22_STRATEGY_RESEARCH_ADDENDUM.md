@@ -6,13 +6,26 @@ This addendum summarizes what the current dataset can/can’t support for “exa
 
 High-level state from the live ClickHouse tables (not a frozen Parquet snapshot):
 
-- Trades: **~24.8k** total, **~21.6k** resolved
-- Notional: **~$183k** (sum of `price * size`)
-- Realized PnL (resolved, fee-excluded): **~$2,964**
+- Trades: **~26.9k** total, **~23.3k** resolved
+- Notional: **~$199k** (sum of `price * size`)
+- Realized PnL (resolved, fee-excluded): **~$2.4k**
 - TOB freshness is still poor (from `polybot.user_trade_research`, `tob_known=1`):
   - `tob_lag_millis` median **~62.7s**, p90 **~101s**, max **~301s**
+- WS TOB is now live for the active Up/Down token universe:
+  - `polybot.market_ws_tob` + `polybot.user_trade_enriched_v3` (ASOF join)
+  - When WS is running, `ws_tob_lag_millis` is typically **~100–300ms**
+  - Important: Polymarket’s WS subscription does **not** reliably apply “re-subscribe with a new asset list” on an
+    existing connection; the client must reconnect when the asset set changes. This is now handled in
+    `polybot-core` (`ClobMarketWebSocketClient`).
+- Polygon receipts are now being collected:
+  - `polybot.polygon_tx_receipts` + `polybot.user_trade_enriched_v2.tx_*` join
+  - Important: `tx.from` is a relayer (not the trader). The trader/proxy address appears inside receipt logs.
+  - New decoded views (from raw receipts):
+    - `polybot.polygon_erc20_transfers`, `polybot.polygon_usdc_transfers`
+    - `polybot.polygon_exchange_order_filled`, `polybot.polygon_exchange_orders_matched`
+    - `polybot.user_trade_onchain_pair` (joins fills ↔ on-chain and surfaces the paired leg when present)
 - Up/Down pairing signal is strong:
-  - **~82%** of Up/Down trades can be matched to the opposite outcome in the same market within **60s**
+  - `polybot.user_complete_sets_detected` pairs opposing outcomes within **60s** (diagnostic / may overcount).
 - Dual-outcome TOB capture is improving but incomplete:
   - last ~2h: **~19%** of `trade_key`s have **both** token snapshots in `polybot.clob_tob`
 
@@ -81,6 +94,20 @@ Median **share size** by market family (resolved trades):
 Implication:
 - Matching “volume profile” requires **series-aware sizing** (or at least weights).
 
+### 1.5 On-chain evidence: “complete-set-like” matching is a major driver (high signal)
+
+Using `polybot.user_trade_onchain_pair` (1,185 trades with on-chain `OrdersMatched` logs):
+
+- **62.7%** of on-chain-matched trades have a paired opposite-outcome fill in the same tx (`pair_token_id != ''`)
+- On the resolved subset (931 trades), PnL splits sharply:
+  - `completeSetLike=1`: **+$220.20** (avg **+$0.380**/trade, win-rate **~52.7%**)
+  - `completeSetLike=0`: **-$154.90** (avg **-$0.440**/trade, win-rate **~45.5%**)
+
+This strongly suggests the “exact replica” must model **how fills route** (paired outcome vs collateral leg), not only
+the visible trade prints. A fast way to monitor this live is:
+
+`python research/onchain_match_report.py --username gabagool22`
+
 ## 2) Why “100% exact match” is not currently provable
 
 ### 2.1 Top-of-book at decision time is often stale
@@ -106,22 +133,30 @@ If gabagool posts multiple maker orders and only one side fills, we never observ
 ### 3.1 Implemented in code (ready for your next run)
 
 - `ingestor-service` now snapshots **all outcomes in the same market** (when Gamma token lists are available), not only the traded token.
+- `ingestor-service` now discovers the active BTC/ETH Up/Down 15m + 1h markets and subscribes them to the **market websocket**, producing continuous `market_ws.tob` events.
+- `ingestor-service` can now fetch **Polygon receipts** per trade `transactionHash` (`polygon.tx.receipt` events).
 - ClickHouse views updated to safely support **multiple TOB rows per trade key** by keying TOB-by-trade on `(trade_key, token_id)` and joining with both.
 
 Files:
 - `ingestor-service/src/main/java/com/polybot/ingestor/ingest/PolymarketMarketContextIngestor.java`
+- `ingestor-service/src/main/java/com/polybot/ingestor/ingest/PolymarketUpDownMarketWsIngestor.java`
+- `ingestor-service/src/main/java/com/polybot/ingestor/ingest/PolygonTxReceiptIngestor.java`
 - `analytics-service/clickhouse/init/003_enriched.sql`
 - `analytics-service/clickhouse/init/008_enhanced_data_collection.sql`
+- `analytics-service/clickhouse/init/0081_market_ws_tob.sql`
+- `analytics-service/clickhouse/init/0080_polygon_tx_receipts.sql`
+- `analytics-service/clickhouse/init/0082_polygon_log_decoding.sql`
+- `analytics-service/clickhouse/init/0090_enriched_ws.sql`
 
 Important:
 - Re-apply ClickHouse DDL before your next data-collection run: `scripts/clickhouse/apply-init.sh`
 
 ### 3.2 Next data upgrades (highest ROI)
 
-1) **Continuous WS TOB store** (not “TOB on trade arrival”):
-   - Record market WS TOB snapshots continuously for the relevant token universe.
-   - ASOF join those snapshots to the trade timestamp during feature generation.
-   - Goal: push effective TOB lag from ~60s → <1s.
+1) **Use the on-chain decoded views to label fills** (complete-set-like vs not):
+   - `polybot.user_trade_onchain_pair` is now available and shows a strong PnL split by routing type.
+   - Next step: join this label into the main feature dataset so we can learn which market states produce
+     complete-set-like fills (and replicate that routing behavior live).
 
 2) **Outcome-pair features**:
    - At each decision time bucket, build a single row containing both outcomes’ prices/sizes/imbalance/spread.
@@ -129,6 +164,7 @@ Important:
 
 3) **Order lifecycle for your own bot (fills/cancels)**:
    - For your live bot, log order placements, cancels, and fills so the sizing/execution model can be calibrated properly.
+   - Without cancels/unfilled quotes, “exact” replication remains underdetermined even with perfect TOB.
 
 ## 4) Bet Sizing for a Smaller Bankroll (Practical + Conservative)
 

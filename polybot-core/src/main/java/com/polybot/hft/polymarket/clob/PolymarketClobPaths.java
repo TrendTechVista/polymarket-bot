@@ -3,6 +3,9 @@ package com.polybot.hft.polymarket.clob;
 public final class PolymarketClobPaths {
 
   public static final String TIME = "/time";
+  public static final String DATA_TRADES = "/data/trades";
+  public static final String DATA_ORDER_PREFIX = "/data/order/";
+  public static final String DATA_ORDERS = "/data/orders";
   public static final String BOOK = "/book";
   public static final String TICK_SIZE = "/tick-size";
   public static final String NEG_RISK = "/neg-risk";

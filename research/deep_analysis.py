@@ -68,10 +68,10 @@ log("=" * 80)
 r = client.query("""
     SELECT 
         multiIf(
-            `u.market_slug` LIKE 'btc-updown-15m-%', '15min-BTC',
-            `u.market_slug` LIKE 'eth-updown-15m-%', '15min-ETH',
-            `u.market_slug` LIKE 'bitcoin-up-or-down-%', '1hour-BTC',
-            `u.market_slug` LIKE 'ethereum-up-or-down-%', '1hour-ETH',
+            market_slug LIKE 'btc-updown-15m-%', '15min-BTC',
+            market_slug LIKE 'eth-updown-15m-%', '15min-ETH',
+            market_slug LIKE 'bitcoin-up-or-down-%', '1hour-BTC',
+            market_slug LIKE 'ethereum-up-or-down-%', '1hour-ETH',
             'other'
         ) as mtype,
         count() as trades,
@@ -132,7 +132,7 @@ log("=" * 80)
 
 r = client.query("""
     SELECT 
-        `u.outcome` as outcome,
+        outcome as outcome,
         count() as trades,
         round(sum((settle_price - price) * size), 2) as pnl,
         round(countIf((settle_price - price) * size > 0) * 100.0 / count(), 2) as win_rate,
@@ -392,7 +392,7 @@ log("=" * 80)
 
 df_full = client.query_df("""
     SELECT 
-        `u.market_slug` as market_slug,
+        market_slug as market_slug,
         price, size, settle_price
     FROM user_trade_enriched_v2
     WHERE username = 'gabagool22' AND settle_price IS NOT NULL
@@ -440,4 +440,3 @@ log("""
 
 log("\n✅ DEEP ANALYSIS COMPLETE")
 out.close()
-

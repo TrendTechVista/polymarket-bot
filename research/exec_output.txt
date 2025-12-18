@@ -1,0 +1,17 @@
+Trades with mid price: 10834
+Trades without mid: 0
+
+Avg price: 0.5062
+Avg mid: 0.4131
+Avg (price - mid): 0.0931
+
+Paid MORE than mid: 6200
+Paid LESS than mid: 4511
+Paid AT mid: 123
+
+Execution impact (mid - actual price): $-14057.96
+Positive = got better than mid, Negative = paid more than mid
+
+Actual PnL (with mid subset): $2031.44
+Mid PnL (if traded at mid): $16089.40
+Execution edge: $-14057.96

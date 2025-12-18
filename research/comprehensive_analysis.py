@@ -108,10 +108,10 @@ log("\n=== PNL BY MARKET TYPE ===")
 result = client.query("""
     SELECT 
         CASE 
-            WHEN `u.market_slug` LIKE 'btc-updown-15m-%' THEN '15min-BTC'
-            WHEN `u.market_slug` LIKE 'eth-updown-15m-%' THEN '15min-ETH'
-            WHEN `u.market_slug` LIKE 'bitcoin-up-or-down-%' THEN '1hour-BTC'
-            WHEN `u.market_slug` LIKE 'ethereum-up-or-down-%' THEN '1hour-ETH'
+            WHEN market_slug LIKE 'btc-updown-15m-%' THEN '15min-BTC'
+            WHEN market_slug LIKE 'eth-updown-15m-%' THEN '15min-ETH'
+            WHEN market_slug LIKE 'bitcoin-up-or-down-%' THEN '1hour-BTC'
+            WHEN market_slug LIKE 'ethereum-up-or-down-%' THEN '1hour-ETH'
             ELSE 'other'
         END as market_type,
         count() as trades,
@@ -198,4 +198,3 @@ with open('/tmp/gabagool_analysis.txt', 'w') as f:
     f.write('\n'.join(output))
 
 print("\n\nAnalysis saved to /tmp/gabagool_analysis.txt")
-

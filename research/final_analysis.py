@@ -38,7 +38,7 @@ r = client.query("""
         min(ts) as first_trade,
         max(ts) as last_trade,
         dateDiff('hour', min(ts), max(ts)) as hours_span,
-        count(DISTINCT `u.market_slug`) as unique_markets,
+        count(DISTINCT market_slug) as unique_markets,
         round(sum(size * price), 2) as total_volume
     FROM user_trade_enriched_v2
     WHERE username = 'gabagool22'
@@ -82,10 +82,10 @@ log("=" * 80)
 r = client.query("""
     SELECT 
         multiIf(
-            `u.market_slug` LIKE 'btc-updown-15m-%', '15min-BTC',
-            `u.market_slug` LIKE 'eth-updown-15m-%', '15min-ETH',
-            `u.market_slug` LIKE 'bitcoin-up-or-down-%', '1hour-BTC',
-            `u.market_slug` LIKE 'ethereum-up-or-down-%', '1hour-ETH',
+            market_slug LIKE 'btc-updown-15m-%', '15min-BTC',
+            market_slug LIKE 'eth-updown-15m-%', '15min-ETH',
+            market_slug LIKE 'bitcoin-up-or-down-%', '1hour-BTC',
+            market_slug LIKE 'ethereum-up-or-down-%', '1hour-ETH',
             'other'
         ) as market_type,
         count() as trades,
@@ -172,7 +172,7 @@ log("=" * 80)
 
 r = client.query("""
     SELECT 
-        `u.outcome` as outcome,
+        outcome as outcome,
         count() as trades,
         round(avg(price), 4) as avg_price,
         round(avg(settle_price), 4) as avg_settle,
@@ -357,4 +357,3 @@ log("=" * 80)
 
 output_file.close()
 print("Analysis saved to /tmp/gabagool_final_analysis.txt")
-

@@ -20,6 +20,14 @@ public class IngestorHttpConfiguration {
   }
 
   @Bean
+  public HttpClient httpClient() {
+    return HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(5))
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .build();
+  }
+
+  @Bean
   public RestClientCustomizer polymarketCommonHeadersRestClientCustomizer(IngestorProperties properties) {
     String userAgent = properties.polymarket().userAgent();
     return builder -> builder
@@ -29,13 +37,9 @@ public class IngestorHttpConfiguration {
   @Bean
   public RestClient polymarketDataApiRestClient(
       IngestorProperties properties,
-      RestClient.Builder builder
+      RestClient.Builder builder,
+      HttpClient httpClient
   ) {
-    HttpClient httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .followRedirects(HttpClient.Redirect.NORMAL)
-        .build();
-
     JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
     requestFactory.setReadTimeout(Duration.ofSeconds(10));
 
@@ -47,12 +51,7 @@ public class IngestorHttpConfiguration {
   }
 
   @Bean
-  public RestClient polymarketSiteRestClient(RestClient.Builder builder) {
-    HttpClient httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .followRedirects(HttpClient.Redirect.NORMAL)
-        .build();
-
+  public RestClient polymarketSiteRestClient(RestClient.Builder builder, HttpClient httpClient) {
     JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
     requestFactory.setReadTimeout(Duration.ofSeconds(10));
 
@@ -66,13 +65,9 @@ public class IngestorHttpConfiguration {
   @Bean
   public RestClient polymarketGammaApiRestClient(
       IngestorProperties properties,
-      RestClient.Builder builder
+      RestClient.Builder builder,
+      HttpClient httpClient
   ) {
-    HttpClient httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .followRedirects(HttpClient.Redirect.NORMAL)
-        .build();
-
     JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
     requestFactory.setReadTimeout(Duration.ofSeconds(10));
 
@@ -86,13 +81,9 @@ public class IngestorHttpConfiguration {
   @Bean
   public RestClient polymarketClobRestClient(
       IngestorProperties properties,
-      RestClient.Builder builder
+      RestClient.Builder builder,
+      HttpClient httpClient
   ) {
-    HttpClient httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .followRedirects(HttpClient.Redirect.NORMAL)
-        .build();
-
     JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
     requestFactory.setReadTimeout(Duration.ofSeconds(10));
 
@@ -106,13 +97,9 @@ public class IngestorHttpConfiguration {
   @Bean
   public RestClient polygonRpcRestClient(
       PolygonProperties properties,
-      RestClient.Builder builder
+      RestClient.Builder builder,
+      HttpClient httpClient
   ) {
-    HttpClient httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .followRedirects(HttpClient.Redirect.NORMAL)
-        .build();
-
     JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
     requestFactory.setReadTimeout(Duration.ofSeconds(20));
 
@@ -120,6 +107,22 @@ public class IngestorHttpConfiguration {
         .baseUrl(properties.rpcUrl().toString())
         .requestFactory(requestFactory)
         .defaultHeader(HttpHeaders.ACCEPT, "application/json")
+        .build();
+  }
+
+  @Bean
+  public RestClient clickhouseRestClient(
+      ClickHouseProperties properties,
+      RestClient.Builder builder,
+      HttpClient httpClient
+  ) {
+    JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+    requestFactory.setReadTimeout(Duration.ofSeconds(properties.timeoutSeconds()));
+
+    return builder
+        .baseUrl(properties.url().toString())
+        .requestFactory(requestFactory)
+        .defaultHeader(HttpHeaders.ACCEPT, "text/plain")
         .build();
   }
 }

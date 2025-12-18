@@ -13,26 +13,34 @@ print("=" * 60)
 # Connect to ClickHouse
 client = clickhouse_connect.get_client(host='localhost', port=8123, database='polybot')
 
+tables = set(r[0] for r in client.query("SHOW TABLES").result_rows)
+view = (
+    "user_trade_enriched_v4"
+    if "user_trade_enriched_v4" in tables
+    else ("user_trade_enriched_v3" if "user_trade_enriched_v3" in tables else "user_trade_enriched_v2")
+)
+print(f"\nUsing view: {view}")
+
 print("\n=== Loading enriched data from ClickHouse ===")
 df = client.query_df("""
     SELECT 
         ts,
-        `u.market_slug` as market_slug,
+        market_slug as market_slug,
         side,
         price,
         size,
-        mid,
-        best_bid_price,
-        best_ask_price,
+        coalesce(ws_mid, mid) AS mid,
+        coalesce(ws_best_bid_price, best_bid_price) AS best_bid_price,
+        coalesce(ws_best_ask_price, best_ask_price) AS best_ask_price,
         settle_price,
         seconds_to_end,
-        `u.outcome` as outcome,
-        exec_type
-    FROM user_trade_enriched_v2
+        outcome as outcome,
+        coalesce(nullIf(ws_exec_type, 'UNKNOWN'), exec_type) AS exec_type
+    FROM {view}
     WHERE username = 'gabagool22'
     AND settle_price IS NOT NULL
     ORDER BY ts
-""")
+""".format(view=view))
 
 print(f"Loaded {len(df)} resolved trades")
 
@@ -157,4 +165,3 @@ for mtype in ['15min-BTC', '15min-ETH', '1hour-BTC', '1hour-ETH']:
 print("\n" + "=" * 60)
 print("SIMULATION COMPLETE")
 print("=" * 60)
-

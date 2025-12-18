@@ -1,16 +1,27 @@
 hft:
-  mode: LIVE
+  mode: PAPER
   events:
     enabled: true
   polymarket:
-    # Auth credentials - fill these in with your values
+    market-ws-enabled: true
+    market-ws-cache-path: logs/market-ws-cache.executor.json
+    market-ws-cache-flush-millis: 5000
     auth:
-      # Your Ethereum private key (0x + 64 hex chars)
-      private-key: "0xe40ba23795d4ffedb8f0d6d5e2b198b4988c2de447fc2b3768733cd359b6f90c"
-      auto-create-or-derive-api-creds: true
+      # Use env vars for real keys; keep develop profile safe by default.
+      private-key: ""
+      auto-create-or-derive-api-creds: false
 
 # Logging
 logging:
   level:
     com.polybot.hft: DEBUG
 
+executor:
+  sim:
+    enabled: true
+    username: polybot-sim
+    proxy-address: sim
+    fills-enabled: true
+    fill-poll-millis: 250
+    maker-fill-probability-per-poll: 0.03
+    maker-fill-fraction-of-remaining: 0.25

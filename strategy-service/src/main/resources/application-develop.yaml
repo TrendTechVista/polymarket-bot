@@ -2,34 +2,35 @@ hft:
   mode: LIVE
   events:
     enabled: true
+    market-ws-cache-publish-on-start: true
   executor:
     base-url: http://localhost:8080
+    # Safety: only enable when intentionally going LIVE against a LIVE executor.
+    send-live-ack: false
   polymarket:
     market-ws-enabled: true
+    market-ws-cache-path: logs/market-ws-cache.strategy.json
+    market-ws-cache-flush-millis: 5000
     gamma-url: https://gamma-api.polymarket.com
   strategy:
 
     # ============================================================================
     # GABAGOOL22 REVERSE-ENGINEERED STRATEGY
     # ============================================================================
-    # Based on analysis of 21,305 trades (Dec 14-16, 2025)
+    # Based on continuous ingestion (Dec 14+ 2025)
     #
     # KEY FINDINGS:
     # - Markets: BTC + ETH ONLY, 15min + 1hour Up/Down
-    # - Timing: 10-15 min before close ($2,573 PnL in this window)
-    # - Direction: DOWN bias (55.2% vs 47.8% win rate)
-    # - Execution: Maker orders at bid+1 = 7x better than taker
-    #
-    # EXPECTED PERFORMANCE (Monte Carlo, 20K iterations):
-    # - gabagool22 actual: $1,370 median, 0.96 Sharpe
-    # - Our strategy:      $9,506 median, 6.65 Sharpe
-    # - Improvement:       7x PnL, 7x Sharpe, 3x lower drawdown
+    # - Timing: 15m series trades span most of the 0..15m lifetime (with a tilt to 10–15m);
+    #          1h series trades span 0..60m (median ~35m).
+    # - Execution: alpha is dominated by maker-like execution (do NOT cross the spread).
     # ============================================================================
     gabagool:
       enabled: true
       refresh-millis: 250
-      min-seconds-to-end: 600    # 10 minutes (optimal window start)
-      max-seconds-to-end: 900    # 15 minutes (optimal window end)
+      min-replace-millis: 1000   # minimum cancel/replace cadence per tokenId
+      min-seconds-to-end: 0      # trade window start (seconds to market end)
+      max-seconds-to-end: 3600   # trade window end (caps 1h; 15m is capped to 900 in code)
       quote-size: 10             # USDC notional per order (approx. entryPrice * shares)
       quote-size-bankroll-fraction: 0.0
       imbalance-threshold: 0.05  # Min book imbalance to trigger signal
@@ -38,6 +39,19 @@ hft:
       bankroll-usd: 0
       max-order-bankroll-fraction: 0.0
       max-total-bankroll-fraction: 0.0
+
+      # ============================================================================
+      # COMPLETE-SET COORDINATION (gabagool22's core edge)
+      # ============================================================================
+      # Research shows ~88% of gabagool22's trades are complete-set-like (paired UP+DOWN fills)
+      # The edge is: 1.0 - (bid_up + bid_down), typically 0.01-0.02 when WS TOB is fresh
+      # ============================================================================
+      complete-set-min-edge: 0.01           # Min complete-set edge to quote (1 - bid_up - bid_down)
+      complete-set-max-skew-ticks: 2        # Max inventory skew (ticks) applied to quotes
+      complete-set-imbalance-shares-for-max-skew: 40  # Share imbalance at which max skew is applied
+      complete-set-top-up-enabled: true     # Cross spread on lagging leg near market end
+      complete-set-top-up-seconds-to-end: 60  # Only top-up when <= N seconds to end
+      complete-set-top-up-min-shares: 10    # Min imbalance shares to trigger top-up
 
 # Logging - enable debug for gabagool strategy
 logging:

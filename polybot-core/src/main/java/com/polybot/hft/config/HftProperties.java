@@ -57,7 +57,7 @@ public record HftProperties(
   }
 
   private static Polymarket defaultPolymarket() {
-    return new Polymarket(null, null, null, null, null, null, null, null, null, null, null);
+    return new Polymarket(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
   }
 
   private static Rest defaultRest() {
@@ -109,6 +109,7 @@ public record HftProperties(
       String clobRestUrl,
       String clobWsUrl,
       String gammaUrl,
+      String dataApiUrl,
       @Min(1) Integer chainId,
       Boolean useServerTime,
       Boolean marketWsEnabled,
@@ -116,7 +117,26 @@ public record HftProperties(
       List<String> marketAssetIds,
       List<String> userMarketIds,
       @Valid Rest rest,
-      @Valid Auth auth
+      @Valid Auth auth,
+      /**
+       * Optional path to persist the market WS top-of-book cache (JSON). When blank, disabled.
+       * Useful to warm-start after restarts (avoids an empty TOB cache until the first WS update).
+       */
+      String marketWsCachePath,
+      /**
+       * Flush interval for the WS cache snapshot. Ignored when {@code marketWsCachePath} is blank.
+       */
+      @NotNull @PositiveOrZero Long marketWsCacheFlushMillis,
+      /**
+       * Treat the WS as stale when no messages (including PONG) are received for this long.
+       * When stale and {@code marketWsEnabled=true} with active subscriptions, the client auto-reconnects.
+       * Set to 0 to disable.
+       */
+      @NotNull @PositiveOrZero Long marketWsStaleTimeoutMillis,
+      /**
+       * Minimum interval between reconnect attempts when the WS is stale/disconnected.
+       */
+      @NotNull @PositiveOrZero Long marketWsReconnectBackoffMillis
   ) {
     public Polymarket {
       if (clobRestUrl == null || clobRestUrl.isBlank()) {
@@ -127,6 +147,9 @@ public record HftProperties(
       }
       if (gammaUrl == null || gammaUrl.isBlank()) {
         gammaUrl = "https://gamma-api.polymarket.com";
+      }
+      if (dataApiUrl == null || dataApiUrl.isBlank()) {
+        dataApiUrl = "https://data-api.polymarket.com";
       }
       if (chainId == null) {
         chainId = 137;
@@ -147,6 +170,18 @@ public record HftProperties(
       }
       if (auth == null) {
         auth = defaultAuth();
+      }
+      if (marketWsCachePath == null) {
+        marketWsCachePath = "";
+      }
+      if (marketWsCacheFlushMillis == null) {
+        marketWsCacheFlushMillis = 5_000L;
+      }
+      if (marketWsStaleTimeoutMillis == null) {
+        marketWsStaleTimeoutMillis = 60_000L;
+      }
+      if (marketWsReconnectBackoffMillis == null) {
+        marketWsReconnectBackoffMillis = 10_000L;
       }
     }
   }
@@ -249,18 +284,23 @@ public record HftProperties(
   }
 
   private static Gabagool defaultGabagool() {
-    return new Gabagool(false, null, null, null, null, null, null, null, null, null, null, null);
+    return new Gabagool(false, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
   }
 
   /**
-   * Gabagool-style directional strategy configuration.
+   * Gabagool-style Up/Down strategy configuration.
    * Based on reverse-engineering gabagool22's trading patterns.
    */
   public record Gabagool(
       boolean enabled,
       @NotNull @Min(50) Long refreshMillis,
-      @NotNull @Min(60) Long minSecondsToEnd,
-      @NotNull @Min(120) Long maxSecondsToEnd,
+      /**
+       * Minimum interval between cancel/replace cycles for a given tokenId.
+       * Helps avoid spam when the WS book is noisy.
+       */
+      @NotNull @Min(0) Long minReplaceMillis,
+      @NotNull @Min(0) Long minSecondsToEnd,
+      @NotNull @Min(0) Long maxSecondsToEnd,
       /**
        * Target order size in USDC notional (approx. {@code entryPrice * shares} for BUY orders).
        */
@@ -285,17 +325,47 @@ public record HftProperties(
        * Optional cap for total exposure as a fraction of {@code bankrollUsd} (0..1). When 0, disabled.
        */
       @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double maxTotalBankrollFraction,
+      /**
+       * Minimum complete-set edge required to quote both outcomes (edge = 1 - (p_up + p_down)).
+       *
+       * Typical observed maker-side edges for gabagool22 are ~0.01–0.02 when WS TOB is fresh.
+       */
+      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double completeSetMinEdge,
+      /**
+       * Maximum inventory skew (in ticks) applied to one leg and subtracted from the other.
+       */
+      @NotNull @Min(0) Integer completeSetMaxSkewTicks,
+      /**
+       * Share imbalance at which max skew is applied (linear ramp from 0..max).
+       */
+      @NotNull @PositiveOrZero BigDecimal completeSetImbalanceSharesForMaxSkew,
+      /**
+       * When enabled, occasionally cross the spread (taker-like) on the lagging leg to rebalance inventory
+       * near market end.
+       */
+      @NotNull Boolean completeSetTopUpEnabled,
+      /**
+       * Only perform top-ups when {@code secondsToEnd <= completeSetTopUpSecondsToEnd}.
+       */
+      @NotNull @Min(0) Long completeSetTopUpSecondsToEnd,
+      /**
+       * Only perform top-ups when the per-market share imbalance is at least this amount.
+       */
+      @NotNull @PositiveOrZero BigDecimal completeSetTopUpMinShares,
       @Valid List<GabagoolMarket> markets
   ) {
     public Gabagool {
       if (refreshMillis == null) {
         refreshMillis = 250L;
       }
+      if (minReplaceMillis == null) {
+        minReplaceMillis = 1_000L;
+      }
       if (minSecondsToEnd == null) {
-        minSecondsToEnd = 600L;  // 10 minutes
+        minSecondsToEnd = 0L;
       }
       if (maxSecondsToEnd == null) {
-        maxSecondsToEnd = 900L;  // 15 minutes
+        maxSecondsToEnd = 3_600L;
       }
       if (quoteSize == null) {
         quoteSize = BigDecimal.valueOf(10);
@@ -317,6 +387,24 @@ public record HftProperties(
       }
       if (maxTotalBankrollFraction == null) {
         maxTotalBankrollFraction = 0.0;
+      }
+      if (completeSetMinEdge == null) {
+        completeSetMinEdge = 0.01;
+      }
+      if (completeSetMaxSkewTicks == null) {
+        completeSetMaxSkewTicks = 2;
+      }
+      if (completeSetImbalanceSharesForMaxSkew == null) {
+        completeSetImbalanceSharesForMaxSkew = BigDecimal.valueOf(40);
+      }
+      if (completeSetTopUpEnabled == null) {
+        completeSetTopUpEnabled = true;
+      }
+      if (completeSetTopUpSecondsToEnd == null) {
+        completeSetTopUpSecondsToEnd = 60L;
+      }
+      if (completeSetTopUpMinShares == null) {
+        completeSetTopUpMinShares = BigDecimal.valueOf(10);
       }
       markets = sanitizeGabagoolMarkets(markets);
     }

@@ -90,6 +90,25 @@ public final class PolymarketClobClient {
     return getJsonNode(PolymarketClobPaths.SAMPLING_MARKETS, query == null ? Map.of() : query, Map.of());
   }
 
+  public JsonNode getOrder(Credentials signingCredentials, ApiCreds apiCreds, String orderId) {
+    if (orderId == null || orderId.isBlank()) {
+      throw new IllegalArgumentException("orderId must not be blank");
+    }
+    String endpoint = PolymarketClobPaths.DATA_ORDER_PREFIX + orderId.trim();
+    Map<String, String> headers = l2Headers(signingCredentials, apiCreds, HttpMethod.GET, endpoint, "");
+    return getJsonNode(endpoint, Map.of(), headers);
+  }
+
+  public JsonNode getOrders(Credentials signingCredentials, ApiCreds apiCreds, Map<String, String> query) {
+    Map<String, String> headers = l2Headers(signingCredentials, apiCreds, HttpMethod.GET, PolymarketClobPaths.DATA_ORDERS, "");
+    return getJsonNode(PolymarketClobPaths.DATA_ORDERS, query == null ? Map.of() : query, headers);
+  }
+
+  public JsonNode getTrades(Credentials signingCredentials, ApiCreds apiCreds, Map<String, String> query) {
+    Map<String, String> headers = l2Headers(signingCredentials, apiCreds, HttpMethod.GET, PolymarketClobPaths.DATA_TRADES, "");
+    return getJsonNode(PolymarketClobPaths.DATA_TRADES, query == null ? Map.of() : query, headers);
+  }
+
   public ApiCreds createApiCreds(Credentials signingCredentials, long nonce) {
     return l1Auth(signingCredentials, HttpMethod.POST, PolymarketClobPaths.AUTH_API_KEY, null, nonce, ApiCredsRaw.class)
         .toCreds();

@@ -119,20 +119,20 @@ WITH
   if(is_resolved AND trade_outcome_idx > 0, arrayElement(g.outcome_prices, trade_outcome_idx), CAST(NULL, 'Nullable(Float64)')) AS settle_price
 SELECT
   -- Original fields
-  u.ts,
-  u.username,
-  u.proxy_address,
-  u.market_slug,
-  u.title,
-  u.token_id,
-  u.condition_id,
-  u.side,
-  u.outcome,
-  u.outcome_index,
-  u.price,
-  u.size,
-  u.transaction_hash,
-  u.event_key,
+  u.ts AS ts,
+  u.username AS username,
+  u.proxy_address AS proxy_address,
+  u.market_slug AS market_slug,
+  u.title AS title,
+  u.token_id AS token_id,
+  u.condition_id AS condition_id,
+  u.side AS side,
+  u.outcome AS outcome,
+  u.outcome_index AS outcome_index,
+  u.price AS price,
+  u.size AS size,
+  u.transaction_hash AS transaction_hash,
+  u.event_key AS event_key,
 
   -- TOB at trade time
   t.tob_captured_at,
@@ -163,16 +163,16 @@ SELECT
      NULL) AS tob_imbalance,
 
   -- Gamma market metadata
-  g.market_id,
+  g.market_id AS market_id,
   end_date,
   gamma_event_start_time AS event_start_time,
   seconds_to_end,
-  g.active,
-  g.closed,
-  g.uma_resolution_status,
-  g.outcomes,
-  g.outcome_prices,
-  g.token_ids,
+  g.active AS active,
+  g.closed AS closed,
+  g.uma_resolution_status AS uma_resolution_status,
+  g.outcomes AS outcomes,
+  g.outcome_prices AS outcome_prices,
+  g.token_ids AS token_ids,
   is_resolved,
   if(is_resolved, arrayElement(g.outcomes, indexOf(g.outcome_prices, max_outcome_price)), CAST(NULL, 'Nullable(String)')) AS resolved_outcome,
   settle_price,
@@ -190,6 +190,20 @@ SELECT
   nullIf(pr.to_address, '') AS tx_to_address,
   if(pr.tx_hash = '', CAST(NULL, 'Nullable(UInt64)'), pr.gas_used) AS tx_gas_used,
   if(pr.tx_hash = '', CAST(NULL, 'Nullable(UInt64)'), pr.effective_gas_price) AS tx_effective_gas_price,
+
+  -- On-chain pairing / routing label (requires tx receipts + log decoding).
+  (nullIf(oc.tx_hash, '') IS NOT NULL) AS onchain_matched,
+  if(nullIf(oc.tx_hash, '') IS NULL, CAST(NULL, 'Nullable(Float64)'), oc.onchain_usdc) AS onchain_usdc,
+  if(nullIf(oc.tx_hash, '') IS NULL, CAST(NULL, 'Nullable(Float64)'), oc.onchain_shares) AS onchain_shares,
+  if(nullIf(oc.tx_hash, '') IS NULL, CAST(NULL, 'Nullable(Float64)'), oc.onchain_price) AS onchain_price,
+  if(nullIf(oc.tx_hash, '') IS NULL, CAST(NULL, 'Nullable(Float64)'), oc.onchain_minus_trade_price) AS onchain_minus_trade_price,
+  nullIf(oc.pair_token_id, '') AS onchain_pair_token_id,
+  if(nullIf(oc.pair_token_id, '') IS NULL, CAST(NULL, 'Nullable(Float64)'), oc.pair_shares) AS onchain_pair_shares,
+  if(nullIf(oc.pair_token_id, '') IS NULL, CAST(NULL, 'Nullable(Float64)'), oc.pair_price) AS onchain_pair_price,
+  nullIf(oc.pair_counterparty, '') AS onchain_pair_counterparty,
+  if(nullIf(oc.pair_token_id, '') IS NULL, CAST(NULL, 'Nullable(Float64)'), oc.price_sum) AS onchain_price_sum,
+  (oc.pair_token_id != '') AS complete_set_like,
+  if(nullIf(oc.price_sum, 0) IS NULL, CAST(NULL, 'Nullable(Float64)'), 1 - oc.price_sum) AS complete_set_edge,
 
   -- NEW: Resolution timing from resolution table
   r.latest_resolved_at AS market_resolved_at,
@@ -209,6 +223,7 @@ FROM polybot.user_trades_dedup u
 LEFT JOIN polybot.clob_tob_by_trade_v2 t ON t.trade_key = u.event_key AND t.token_id = u.token_id
 LEFT JOIN polybot.gamma_markets_latest g ON g.slug = u.market_slug
 LEFT JOIN polybot.polygon_tx_receipts_latest pr ON pr.tx_hash = u.transaction_hash
+LEFT JOIN polybot.user_trade_onchain_pair oc ON oc.event_key = u.event_key
 LEFT JOIN polybot.market_resolutions_latest r ON r.market_slug = u.market_slug;
 
 
