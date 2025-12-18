@@ -202,11 +202,53 @@ Recommended workflow:
    - Risk-parity across series as a baseline, then tilt toward higher estimated Sharpe.
    - Keep strict caps (because binary markets have fat tails and clustered liquidity events).
 
-## 6) What to do next (so we can converge to “exact”)
+## 6) IMPORTANT: Sample-Period Bias Warning (2025-12-18 Update)
 
-1) Re-run ingestors with the new “both outcomes TOB” capture.
+### The DOWN Profitability Fallacy
+
+Initial research (Dec 14-18, 2025) showed:
+- DOWN trades: **+$11,932 PnL** (profitable)
+- UP trades: **-$6,790 PnL** (losing)
+
+This was **incorrectly interpreted** as gabagool22 having a directional bias toward DOWN.
+
+### Root Cause: BTC Was Trending Down
+
+During our observation period (Dec 14-18), Bitcoin dropped from ~$90,257 to ~$85,500 (**~5% decline**).
+Source: [CoinDesk](https://www.coindesk.com/markets/2025/12/15/bitcoin-plunges-below-usd87k-as-crypto-weakness-persists-ether-below-usd3k/)
+
+This means:
+- DOWN outcomes were **more likely to resolve in-the-money** during this period
+- The DOWN profitability was **sample-period dependent**, not a strategy signal
+- In an up-trending market, we would expect the opposite pattern
+
+### Correct Understanding: Market-Neutral Arbitrage
+
+Gabagool22's strategy is **market-neutral complete-set arbitrage**:
+- The edge comes from `1.0 - (bid_UP + bid_DOWN)` when this is positive
+- He doesn't predict direction; he profits from Polymarket pricing inefficiencies
+- Both UP and DOWN are quoted with **equal size** (adjusted only for inventory skew)
+
+### Implementation Change
+
+The `directional-bias-enabled` config has been set to `false` in `application-develop.yaml`.
+The strategy now quotes UP and DOWN with equal base sizing, which matches gabagool22's actual behavior.
+
+### Data Collection Recommendation
+
+To validate any future directional signals, collect data across:
+1. Up-trending crypto periods (BTC rising)
+2. Down-trending crypto periods (BTC falling)
+3. Sideways/choppy periods
+
+Only if a directional pattern persists **across all regimes** should it be considered a real signal.
+
+## 7) What to do next (so we can converge to "exact")
+
+1) Re-run ingestors with the new "both outcomes TOB" capture.
 2) Rebuild feature dataset to produce paired Up/Down state per decision time.
 3) Re-fit:
    - Direction-choice model (now identifiable)
    - Execution model (fill probability vs quoted price distance to mid, by series)
-4) Only then attempt “exact match” and/or improvements (MPT + sizing).
+4) Only then attempt "exact match" and/or improvements (MPT + sizing).
+5) **Collect data across different market regimes** before adding any directional components.

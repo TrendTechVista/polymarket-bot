@@ -105,6 +105,9 @@ public class GabagoolDirectionalEngine {
                 cfg.completeSetTopUpEnabled(),
                 cfg.completeSetTopUpSecondsToEnd(),
                 cfg.completeSetTopUpMinShares());
+        log.info("gabagool directional-bias config (enabled={}, factor={})",
+                cfg.directionalBiasEnabled(),
+                cfg.directionalBiasFactor());
 
         if (!cfg.enabled()) {
             log.info("gabagool-directional strategy is disabled");
@@ -350,19 +353,63 @@ public class GabagoolDirectionalEngine {
             }
         }
 
-        // ========== QUOTE BOTH LEGS (with skew) ==========
-        maybeQuoteTokenWithSkew(market, market.upTokenId(), Direction.UP, upBook, downBook, cfg, secondsToEnd, skewTicksUp);
-        maybeQuoteTokenWithSkew(market, market.downTokenId(), Direction.DOWN, downBook, upBook, cfg, secondsToEnd, skewTicksDown);
+        // ========== DIRECTIONAL BIAS (based on book imbalance) ==========
+        // Gabagool22 trades WITH the order book - buys more on the side with stronger bid support.
+        // Observed behavior: UP/DOWN ratio of 5-7x when book imbalance is significant.
+        double upSizeFactor = 1.0;
+        double downSizeFactor = 1.0;
+
+        if (cfg.directionalBiasEnabled() && cfg.directionalBiasFactor() > 1.0) {
+            // Calculate book imbalance: (upBidSize - downBidSize) / (upBidSize + downBidSize)
+            BigDecimal upBidSize = upBook.bestBidSize();
+            BigDecimal downBidSize = downBook.bestBidSize();
+
+            if (upBidSize != null && downBidSize != null
+                    && upBidSize.compareTo(BigDecimal.ZERO) > 0
+                    && downBidSize.compareTo(BigDecimal.ZERO) > 0) {
+
+                BigDecimal totalBidSize = upBidSize.add(downBidSize);
+                double bookImbalance = upBidSize.subtract(downBidSize)
+                        .divide(totalBidSize, 8, RoundingMode.HALF_UP)
+                        .doubleValue();
+
+                // If imbalance exceeds threshold, apply directional bias
+                // Positive imbalance = more UP bid support -> favor UP
+                // Negative imbalance = more DOWN bid support -> favor DOWN
+                double threshold = cfg.imbalanceThreshold();
+
+                if (Math.abs(bookImbalance) >= threshold) {
+                    double factor = cfg.directionalBiasFactor();
+                    if (bookImbalance > 0) {
+                        // Favor UP: increase UP size, decrease DOWN size
+                        upSizeFactor = factor;
+                        downSizeFactor = 1.0 / factor;
+                    } else {
+                        // Favor DOWN: increase DOWN size, decrease UP size
+                        upSizeFactor = 1.0 / factor;
+                        downSizeFactor = factor;
+                    }
+
+                    log.debug("GABAGOOL: Directional bias on {} - bookImbalance={}, upFactor={}, downFactor={}",
+                            market.slug(), String.format("%.3f", bookImbalance), String.format("%.2f", upSizeFactor), String.format("%.2f", downSizeFactor));
+                }
+            }
+        }
+
+        // ========== QUOTE BOTH LEGS (with skew and directional bias) ==========
+        maybeQuoteTokenWithSkew(market, market.upTokenId(), Direction.UP, upBook, downBook, cfg, secondsToEnd, skewTicksUp, upSizeFactor);
+        maybeQuoteTokenWithSkew(market, market.downTokenId(), Direction.DOWN, downBook, upBook, cfg, secondsToEnd, skewTicksDown, downSizeFactor);
     }
 
     /**
      * Replica-style quoting with inventory skew: place/maintain a single maker-like BUY order per token.
      *
      * @param skewTicks Positive = improve quote (bid higher), Negative = penalize quote (bid lower)
+     * @param sizeFactor Directional bias multiplier (e.g., 1.5 for favored side, 0.67 for unfavored)
      */
     private void maybeQuoteTokenWithSkew(GabagoolMarket market, String tokenId, Direction direction,
                                           TopOfBook book, TopOfBook otherBook, GabagoolConfig cfg,
-                                          long secondsToEnd, int skewTicks) {
+                                          long secondsToEnd, int skewTicks, double sizeFactor) {
         if (tokenId == null || tokenId.isBlank() || book == null) {
             return;
         }
@@ -377,9 +424,17 @@ public class GabagoolDirectionalEngine {
             return;
         }
 
-        BigDecimal shares = calculateReplicaShares(market, entryPrice, cfg);
+        BigDecimal shares = calculateReplicaShares(market, entryPrice, cfg, secondsToEnd);
         if (shares == null) {
             return;
+        }
+
+        // Apply directional bias factor to sizing
+        if (sizeFactor != 1.0 && sizeFactor > 0) {
+            shares = shares.multiply(BigDecimal.valueOf(sizeFactor)).setScale(2, RoundingMode.DOWN);
+            if (shares.compareTo(BigDecimal.valueOf(0.01)) < 0) {
+                return;  // Too small after applying bias
+            }
         }
 
         OrderState existing = ordersByTokenId.get(tokenId);
@@ -996,6 +1051,9 @@ public class GabagoolDirectionalEngine {
                 cfg.completeSetTopUpEnabled(),
                 cfg.completeSetTopUpSecondsToEnd(),
                 cfg.completeSetTopUpMinShares(),
+                // Directional bias parameters
+                cfg.directionalBiasEnabled(),
+                cfg.directionalBiasFactor(),
                 marketConfigs
         );
     }
@@ -1101,7 +1159,35 @@ public class GabagoolDirectionalEngine {
         return null;
     }
 
-    private BigDecimal calculateReplicaShares(GabagoolMarket market, BigDecimal entryPrice, GabagoolConfig cfg) {
+    /**
+     * Calculate size reduction factor based on time remaining to market end.
+     * Based on empirical analysis of gabagool22's sizing behavior:
+     * - Near expiry (<60s): ~45% of target size (reduces risk exposure)
+     * - 1-3 min: ~55%
+     * - 3-5 min: ~67%
+     * - 5-10 min: ~75%
+     * - >10 min: 100% (full target)
+     */
+    private static double calculateTimeToEndSizeFactor(long secondsToEnd) {
+        if (secondsToEnd < 60) {
+            // < 1 minute: 45%
+            return 0.45;
+        } else if (secondsToEnd < 180) {
+            // 1-3 minutes: 55%
+            return 0.55;
+        } else if (secondsToEnd < 300) {
+            // 3-5 minutes: 67%
+            return 0.67;
+        } else if (secondsToEnd < 600) {
+            // 5-10 minutes: 75%
+            return 0.75;
+        } else {
+            // > 10 minutes: full size
+            return 1.0;
+        }
+    }
+
+    private BigDecimal calculateReplicaShares(GabagoolMarket market, BigDecimal entryPrice, GabagoolConfig cfg, long secondsToEnd) {
         BigDecimal baseShares = baseReplicaShares(market);
         if (baseShares == null) {
             // Fallback to existing notional-based sizing if we don't recognize the market family.
@@ -1113,7 +1199,16 @@ public class GabagoolDirectionalEngine {
             return null;
         }
 
-        BigDecimal shares = baseShares;
+        // Apply time-to-end sizing adjustment (based on gabagool22's empirical behavior):
+        // Near expiry he trades smaller to reduce risk exposure.
+        // Empirical observations:
+        //   < 1 min to end: ~9 shares avg (45% of target)
+        //   1-3 min: ~11 shares avg (55%)
+        //   3-5 min: ~13.5 shares avg (67%)
+        //   5-10 min: ~15 shares avg (75%)
+        //   > 10 min: full target size
+        double sizeFactor = calculateTimeToEndSizeFactor(secondsToEnd);
+        BigDecimal shares = baseShares.multiply(BigDecimal.valueOf(sizeFactor));
 
         // Apply optional per-order and total exposure caps using bankroll configuration.
         BigDecimal bankrollUsd = cfg.bankrollUsd();
@@ -1402,6 +1497,9 @@ public class GabagoolDirectionalEngine {
             boolean completeSetTopUpEnabled,
             long completeSetTopUpSecondsToEnd,
             BigDecimal completeSetTopUpMinShares,
+            // Directional bias parameters (based on gabagool22's book imbalance trading)
+            boolean directionalBiasEnabled,
+            double directionalBiasFactor,
             List<GabagoolMarketConfig> markets
     ) {}
 

@@ -1,0 +1,72 @@
+{
+  "data_quality": {
+    "total_input": 38741,
+    "issues": {
+      "wrong_series": 0,
+      "invalid_time_to_end": 382,
+      "missing_token_ids": 1956,
+      "missing_our_tob": 7634
+    },
+    "total_clean": 31107,
+    "clean_rate": 80.29477814202008
+  },
+  "summary": {
+    "total_trades": 31107,
+    "we_would_quote": 7288,
+    "we_would_match": 5268,
+    "quote_rate_pct": 23.42881023563828,
+    "match_rate_pct": 16.935094994695728,
+    "fill_rate_if_quoted_pct": 72.28320526893523
+  },
+  "match_type_breakdown": {
+    "NO_OTHER_TOB": 21950,
+    "NO_OUR_TOB": 300,
+    "WOULD_QUOTE_NO_FILL": 2020,
+    "MATCH": 5268,
+    "INSUFFICIENT_EDGE": 1569
+  },
+  "by_series": {
+    "btc-15m": {
+      "total": 14289,
+      "matches": 2139,
+      "match_rate_pct": 14.969557001889566,
+      "avg_gabagool_size": 16.162000935016366,
+      "our_base_size": 19.0
+    },
+    "eth-15m": {
+      "total": 7210,
+      "matches": 1146,
+      "match_rate_pct": 15.894590846047157,
+      "avg_gabagool_size": 11.61585514834206,
+      "our_base_size": 14.0
+    },
+    "btc-1h": {
+      "total": 5780,
+      "matches": 1055,
+      "match_rate_pct": 18.252595155709344,
+      "avg_gabagool_size": 16.635345971563982,
+      "our_base_size": 18.0
+    },
+    "eth-1h": {
+      "total": 3828,
+      "matches": 928,
+      "match_rate_pct": 24.242424242424242,
+      "avg_gabagool_size": 11.124105603448276,
+      "our_base_size": 14.0
+    }
+  },
+  "price_accuracy": {
+    "avg_price_diff": -0.013482688159697123,
+    "median_price_diff": 0.0,
+    "std_price_diff": 0.03281540576618468
+  },
+  "size_accuracy": {
+    "avg_size_ratio": 0.8509353006345272,
+    "median_size_ratio": 1.0
+  },
+  "pnl": {
+    "gabagool_total_pnl": 4275.909649999998,
+    "gabagool_pnl_on_matches": 680.1964449999989,
+    "our_simulated_pnl": -126.79750000000023
+  }
+}

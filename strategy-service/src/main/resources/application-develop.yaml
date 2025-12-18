@@ -34,7 +34,7 @@ hft:
       quote-size: 10             # USDC notional per order (approx. entryPrice * shares)
       quote-size-bankroll-fraction: 0.0
       imbalance-threshold: 0.05  # Min book imbalance to trigger signal
-      improve-ticks: 1           # Place at bid+1 tick (MAKER, not taker)
+      improve-ticks: 0           # Place AT best bid (true maker, matches gabagool22)
       # Optional bankroll-aware caps (set bankroll-usd > 0 to enable)
       bankroll-usd: 0
       max-order-bankroll-fraction: 0.0
@@ -52,6 +52,18 @@ hft:
       complete-set-top-up-enabled: true     # Cross spread on lagging leg near market end
       complete-set-top-up-seconds-to-end: 60  # Only top-up when <= N seconds to end
       complete-set-top-up-min-shares: 10    # Min imbalance shares to trigger top-up
+
+      # ============================================================================
+      # DIRECTIONAL BIAS (DISABLED - market-neutral approach)
+      # ============================================================================
+      # IMPORTANT: Initial research showed DOWN bias was profitable, but this was
+      # sample-period dependent (BTC dropped ~5% during Dec 14-18 observation).
+      # Gabagool22's actual strategy is MARKET-NEUTRAL complete-set arbitrage.
+      # The edge comes from pricing inefficiencies, NOT from predicting direction.
+      # Keep disabled until we have data across both up AND down market regimes.
+      # ============================================================================
+      directional-bias-enabled: false       # DISABLED - strategy is market-neutral
+      directional-bias-factor: 1.5          # (unused when disabled)
 
 # Logging - enable debug for gabagool strategy
 logging:

@@ -284,7 +284,7 @@ public record HftProperties(
   }
 
   private static Gabagool defaultGabagool() {
-    return new Gabagool(false, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+    return new Gabagool(false, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
   }
 
   /**
@@ -352,6 +352,18 @@ public record HftProperties(
        * Only perform top-ups when the per-market share imbalance is at least this amount.
        */
       @NotNull @PositiveOrZero BigDecimal completeSetTopUpMinShares,
+      /**
+       * Enable directional bias based on order book imbalance.
+       * When enabled, quotes more aggressively on the side favored by book imbalance.
+       * Based on gabagool22's observed behavior: he tilts 5-7x toward the side with stronger book support.
+       */
+      @NotNull Boolean directionalBiasEnabled,
+      /**
+       * Multiplier for sizing on the favored side when book imbalance exceeds threshold.
+       * The unfavored side gets 1/factor (e.g., factor=1.5 means favored=1.5x, unfavored=0.67x).
+       * Gabagool22 shows ratios of 5-7x, but we start conservatively.
+       */
+      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("3.0") Double directionalBiasFactor,
       @Valid List<GabagoolMarket> markets
   ) {
     public Gabagool {
@@ -405,6 +417,12 @@ public record HftProperties(
       }
       if (completeSetTopUpMinShares == null) {
         completeSetTopUpMinShares = BigDecimal.valueOf(10);
+      }
+      if (directionalBiasEnabled == null) {
+        directionalBiasEnabled = false;  // Disabled by default for safety
+      }
+      if (directionalBiasFactor == null) {
+        directionalBiasFactor = 1.5;  // Conservative: 1.5x favored, 0.67x unfavored
       }
       markets = sanitizeGabagoolMarkets(markets);
     }

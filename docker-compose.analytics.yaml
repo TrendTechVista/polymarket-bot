@@ -20,8 +20,7 @@ services:
       - --kafka-addr
       - INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
       - --advertise-kafka-addr
-      - INTERNAL://redpanda:29092,
-      - EXTERNAL://localhost:9092
+      - INTERNAL://redpanda:29092,EXTERNAL://localhost:9092
     ports:
       - "127.0.0.1:9092:9092"
       - "127.0.0.1:9644:9644"
