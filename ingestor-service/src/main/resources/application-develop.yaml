@@ -2,9 +2,11 @@ hft:
   events:
     enabled: true
     market-ws-cache-publish-on-start: true
+    # Publish periodic TOB snapshots to keep decision-time ASOF joins "fresh" even when the book is stable.
+    market-ws-snapshot-publish-millis: 1000
   polymarket:
     market-ws-enabled: true
-    market-ws-cache-path: logs/market-ws-cache.ingestor.json
+    market-ws-cache-path: .cache/ws/market-ws-cache.ingestor.json
     market-ws-cache-flush-millis: 5000
 
 ingestor:

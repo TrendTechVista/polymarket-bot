@@ -33,3 +33,4 @@ research/.ipynb_checkpoints/
 # Runtime logs / local caches
 logs/
 !logs/.gitkeep
+.cache/

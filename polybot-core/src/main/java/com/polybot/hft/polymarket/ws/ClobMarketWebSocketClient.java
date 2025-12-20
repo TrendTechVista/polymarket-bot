@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -26,6 +27,7 @@ import java.nio.file.StandardOpenOption;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,6 +43,7 @@ import java.util.stream.Collectors;
 public class ClobMarketWebSocketClient {
 
   private static final long HEARTBEAT_LOG_INTERVAL_SECONDS = 15L;
+  private static final long FRESH_TOB_LOG_THRESHOLD_MILLIS = 5_000L;
 
   private final @NonNull HftProperties properties;
   private final @NonNull HttpClient httpClient;
@@ -211,6 +214,42 @@ public class ClobMarketWebSocketClient {
     }
   }
 
+  /**
+   * Replace the current subscription set (prunes old assets).
+   *
+   * Important for WS decision-time coverage: add-only subscriptions accumulate expired markets over time,
+   * which bloats caches and makes "fresh TOB" effectively unattainable for the active universe.
+   */
+  public void setSubscribedAssets(List<String> assetIds) {
+    if (!properties.polymarket().marketWsEnabled()) {
+      return;
+    }
+    List<String> sanitized = sanitize(assetIds);
+    if (sanitized.isEmpty()) {
+      return;
+    }
+
+    Set<String> desired = new HashSet<>(sanitized);
+    synchronized (this) {
+      if (subscribedAssetIds.equals(desired)) {
+        return;
+      }
+
+      subscribedAssetIds.clear();
+      subscribedAssetIds.addAll(desired);
+
+      // Prune stale caches so we don't persist/heartbeat thousands of dead markets.
+      topOfBookByAssetId.keySet().retainAll(desired);
+      lastTobEventAtMillisByAssetId.keySet().retainAll(desired);
+
+      if (!started) {
+        connectLocked();
+        return;
+      }
+      reconnectLocked();
+    }
+  }
+
   private void reconnectLocked() {
     WebSocket ws = this.webSocket;
     if (ws != null) {
@@ -242,12 +281,20 @@ public class ClobMarketWebSocketClient {
       pingExecutor.scheduleAtFixedRate(() -> {
         WebSocket ws = this.webSocket;
         if (ws != null) {
-          ws.sendText("PING", true);
+          try {
+            ws.sendPing(ByteBuffer.wrap(new byte[]{1}));
+          } catch (Exception ignored) {
+          }
         }
       }, 10, 10, TimeUnit.SECONDS);
 
       pingExecutor.scheduleAtFixedRate(this::logHeartbeat, HEARTBEAT_LOG_INTERVAL_SECONDS, HEARTBEAT_LOG_INTERVAL_SECONDS, TimeUnit.SECONDS);
       pingExecutor.scheduleAtFixedRate(this::maintainConnectionSafely, 5, 5, TimeUnit.SECONDS);
+
+      long snapshotMillis = eventsProperties.marketWsSnapshotPublishMillis();
+      if (snapshotMillis > 0) {
+        pingExecutor.scheduleAtFixedRate(this::republishSnapshotsSafely, snapshotMillis, snapshotMillis, TimeUnit.MILLISECONDS);
+      }
 
       long flushMillis = properties.polymarket().marketWsCacheFlushMillis();
       if (flushMillis > 0 && isCachePersistenceEnabled()) {
@@ -387,7 +434,69 @@ public class ClobMarketWebSocketClient {
     long now = System.currentTimeMillis();
     long lastAt = lastMessageAtMillis.get();
     String lastAgo = lastAt <= 0 ? "never" : (now - lastAt) + "ms ago";
-    log.info("Market WS heartbeat subscribed={} tobKnown={} msgs={} book={} priceChange={} lastTrade={} lastMsg={}", subscribedAssetIds.size(), topOfBookByAssetId.size(), messagesReceived.get(), bookMessages.get(), priceChangeMessages.get(), lastTradeMessages.get(), lastAgo);
+
+    int subscribed = subscribedAssetIds.size();
+    int known = topOfBookByAssetId.size();
+    int fresh = 0;
+    for (String assetId : subscribedAssetIds) {
+      TopOfBook tob = topOfBookByAssetId.get(assetId);
+      if (tob == null || tob.updatedAt() == null) {
+        continue;
+      }
+      if (now - tob.updatedAt().toEpochMilli() <= FRESH_TOB_LOG_THRESHOLD_MILLIS) {
+        fresh++;
+      }
+    }
+    log.info("Market WS heartbeat subscribed={} tobKnown={} tobFresh({}ms)={} msgs={} book={} priceChange={} lastTrade={} lastMsg={}",
+        subscribed, known, FRESH_TOB_LOG_THRESHOLD_MILLIS, fresh, messagesReceived.get(), bookMessages.get(), priceChangeMessages.get(), lastTradeMessages.get(), lastAgo);
+  }
+
+  private void republishSnapshotsSafely() {
+    try {
+      republishSnapshots();
+    } catch (Exception e) {
+      log.debug("Market WS snapshot republish failed: {}", e.toString());
+    }
+  }
+
+  private void republishSnapshots() {
+    if (!started) {
+      return;
+    }
+    if (!events.isEnabled()) {
+      return;
+    }
+    if (subscribedAssetIds.isEmpty() || topOfBookByAssetId.isEmpty()) {
+      return;
+    }
+
+    long staleTimeoutMillis = properties.polymarket().marketWsStaleTimeoutMillis();
+    long nowMillis = System.currentTimeMillis();
+    long lastAt = lastMessageAtMillis.get();
+    boolean stale = staleTimeoutMillis > 0 && lastAt > 0 && (nowMillis - lastAt) > staleTimeoutMillis;
+    if (stale) {
+      return;
+    }
+
+    Instant now = Instant.now(clock);
+    for (String assetId : subscribedAssetIds) {
+      TopOfBook tob = topOfBookByAssetId.get(assetId);
+      if (tob == null || tob.bestBid() == null || tob.bestAsk() == null) {
+        continue;
+      }
+
+      TopOfBook snapshot = new TopOfBook(
+          tob.bestBid(),
+          tob.bestAsk(),
+          tob.bestBidSize(),
+          tob.bestAskSize(),
+          tob.lastTradePrice(),
+          now,
+          tob.lastTradeAt()
+      );
+      topOfBookByAssetId.put(assetId, snapshot);
+      maybePublishTopOfBook(assetId, snapshot);
+    }
   }
 
   private void handleBook(JsonNode node) {
@@ -561,7 +670,7 @@ public class ClobMarketWebSocketClient {
           && snapshot.subscribedAssetIds() != null
           && !snapshot.subscribedAssetIds().isEmpty()
           && subscribedAssetIds.isEmpty()) {
-        subscribeAssets(snapshot.subscribedAssetIds());
+        setSubscribedAssets(snapshot.subscribedAssetIds());
       }
     } catch (Exception e) {
       log.warn("Failed to load market WS TOB cache from {}: {}", pathStr, e.getMessage());
@@ -636,6 +745,13 @@ public class ClobMarketWebSocketClient {
         buf.setLength(0);
         handleMessage(message);
       }
+      webSocket.request(1);
+      return null;
+    }
+
+    @Override
+    public CompletionStage<?> onPong(WebSocket webSocket, ByteBuffer message) {
+      lastMessageAtMillis.set(System.currentTimeMillis());
       webSocket.request(1);
       return null;
     }

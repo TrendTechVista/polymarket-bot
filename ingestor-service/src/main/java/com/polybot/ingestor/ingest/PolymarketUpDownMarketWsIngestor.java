@@ -7,6 +7,7 @@ import com.polybot.hft.events.HftEventPublisher;
 import com.polybot.ingestor.config.MarketWsProperties;
 import com.polybot.ingestor.polymarket.PolymarketGammaApiClient;
 import com.polybot.hft.polymarket.ws.ClobMarketWebSocketClient;
+import com.polybot.hft.polymarket.ws.TopOfBook;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +41,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class PolymarketUpDownMarketWsIngestor {
 
   private static final ZoneId ET_ZONE = ZoneId.of("America/New_York");
+  private static final long FRESH_TOB_MAX_AGE_MILLIS = 5_000L;
 
   private final @NonNull MarketWsProperties properties;
   private final @NonNull HftProperties hft;
@@ -106,7 +108,31 @@ public class PolymarketUpDownMarketWsIngestor {
         .filter(s -> !s.isBlank())
         .distinct()
         .toList();
-    marketWs.subscribeAssets(assetIds);
+    marketWs.setSubscribedAssets(assetIds);
+
+    // Coverage reporting: decision-time TOB needs BOTH legs, continuously.
+    int pairs = markets.size();
+    int pairsWithBoth = 0;
+    int pairsFreshBoth = 0;
+    int pairsStale = 0;
+    for (DiscoveredMarket m : markets) {
+      TopOfBook up = marketWs.getTopOfBook(m.upTokenId()).orElse(null);
+      TopOfBook down = marketWs.getTopOfBook(m.downTokenId()).orElse(null);
+      if (up == null || down == null || up.updatedAt() == null || down.updatedAt() == null) {
+        continue;
+      }
+      pairsWithBoth++;
+      long upAge = Math.max(0, Duration.between(up.updatedAt(), now).toMillis());
+      long downAge = Math.max(0, Duration.between(down.updatedAt(), now).toMillis());
+      if (upAge <= FRESH_TOB_MAX_AGE_MILLIS && downAge <= FRESH_TOB_MAX_AGE_MILLIS) {
+        pairsFreshBoth++;
+      } else {
+        pairsStale++;
+      }
+    }
+    log.info("market-ws coverage markets={} pairsWithBothTob={} pairsFreshBoth({}ms)={} pairsStale={} subscribedAssets={} tobKnown={}",
+        pairs, pairsWithBoth, FRESH_TOB_MAX_AGE_MILLIS, pairsFreshBoth, pairsStale,
+        marketWs.subscribedAssetCount(), marketWs.topOfBookCount());
 
     if (log.isDebugEnabled()) {
       log.debug("market-ws subscribed markets={} assets={}", markets.size(), assetIds.size());

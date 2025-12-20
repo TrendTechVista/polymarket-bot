@@ -1281,7 +1281,7 @@ public class GabagoolDirectionalEngine {
                     .distinct()
                     .toList();
             if (!assetIds.isEmpty()) {
-                marketWs.subscribeAssets(assetIds);
+                marketWs.setSubscribedAssets(assetIds);
             }
 
             if (!markets.isEmpty()) {
