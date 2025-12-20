@@ -36,13 +36,69 @@ class StrategyConfig:
     improve_ticks: int = 0                    # Quote AT best bid (maker)
     tick_size: float = 0.01
 
-    # Base sizes by series (from research)
-    base_sizes: Dict[str, float] = field(default_factory=lambda: {
-        'btc-15m': 19.0,
-        'eth-15m': 14.0,
-        'btc-1h': 18.0,
-        'eth-1h': 14.0,
-    })
+    # Discrete sizing by series + time-to-end bucket (medians from latest snapshot analysis).
+    def replica_shares(self, series: str, seconds_to_end: int) -> float:
+        s = int(seconds_to_end)
+
+        # 15m (BTC):  <1m=11, 1-3m=13, 3-5m=17, 5-10m=19, 10-15m=20
+        if series == 'btc-15m':
+            if s < 60:
+                return 11.0
+            if s < 180:
+                return 13.0
+            if s < 300:
+                return 17.0
+            if s < 600:
+                return 19.0
+            return 20.0
+
+        # 15m (ETH):  <1m=8, 1-3m=10, 3-5m=12, 5-10m=13, 10-15m=14
+        if series == 'eth-15m':
+            if s < 60:
+                return 8.0
+            if s < 180:
+                return 10.0
+            if s < 300:
+                return 12.0
+            if s < 600:
+                return 13.0
+            return 14.0
+
+        # 1h (BTC): <1m=9, 1-3m=10, 3-5m=11, 5-10m=12, 10-15m=14, 15-20m=15, 20-30m=17, 30-60m=18
+        if series == 'btc-1h':
+            if s < 60:
+                return 9.0
+            if s < 180:
+                return 10.0
+            if s < 300:
+                return 11.0
+            if s < 600:
+                return 12.0
+            if s < 900:
+                return 14.0
+            if s < 1200:
+                return 15.0
+            if s < 1800:
+                return 17.0
+            return 18.0
+
+        # 1h (ETH): <1m=7, 1-5m=8, 5-10m=9, 10-15m=11, 15-20m=12, 20-30m=13, 30-60m=14
+        if series == 'eth-1h':
+            if s < 60:
+                return 7.0
+            if s < 300:
+                return 8.0
+            if s < 600:
+                return 9.0
+            if s < 900:
+                return 11.0
+            if s < 1200:
+                return 12.0
+            if s < 1800:
+                return 13.0
+            return 14.0
+
+        return 15.0
 
     # Directional bias (disabled - market neutral)
     directional_bias_enabled: bool = False
@@ -400,9 +456,8 @@ class StrategyReplayEngine:
         # 5) Determine quote price (AT best bid, no improvement)
         quote_price = trade.our_tob.best_bid
 
-        # 6) Determine quote size
-        base_size = config.base_sizes.get(trade.series, 15.0)
-        quote_size = base_size
+        # 6) Determine quote size (time-to-end adjusted, series-specific)
+        quote_size = config.replica_shares(trade.series, trade.seconds_to_end)
 
         # (Directional bias is disabled - market neutral)
 
@@ -614,7 +669,10 @@ class Backtester:
                     'matches': len(series_matches),
                     'match_rate_pct': len(series_matches) / len(series_comparisons) * 100,
                     'avg_gabagool_size': np.mean([c.gabagool_trade.size for c in series_matches]) if series_matches else 0,
-                    'our_base_size': self.config.base_sizes.get(series, 0),
+                    'our_avg_modeled_size': np.mean([
+                        self.config.replica_shares(series, int(c.gabagool_trade.seconds_to_end))
+                        for c in series_matches
+                    ]) if series_matches else 0,
                 }
 
         return report

@@ -29,3 +29,7 @@ __pycache__/
 research/data/
 research/.ipynb_checkpoints/
 .venv/
+
+# Runtime logs / local caches
+logs/
+!logs/.gitkeep

@@ -23,7 +23,8 @@ hft:
     # - Markets: BTC + ETH ONLY, 15min + 1hour Up/Down
     # - Timing: 15m series trades span most of the 0..15m lifetime (with a tilt to 10–15m);
     #          1h series trades span 0..60m (median ~35m).
-    # - Execution: alpha is dominated by maker-like execution (do NOT cross the spread).
+    # - Execution: maker quoting at bid + occasional taker top-ups on the lagging leg
+    #   (FAST_TOP_UP / TOP_UP) to complete hedges quickly when fills are asynchronous.
     # ============================================================================
     gabagool:
       enabled: true
@@ -51,7 +52,13 @@ hft:
       complete-set-imbalance-shares-for-max-skew: 40  # Share imbalance at which max skew is applied
       complete-set-top-up-enabled: true     # Cross spread on lagging leg near market end
       complete-set-top-up-seconds-to-end: 60  # Only top-up when <= N seconds to end
-      complete-set-top-up-min-shares: 10    # Min imbalance shares to trigger top-up
+      complete-set-top-up-min-shares: 0.01  # Min imbalance shares to trigger top-up
+      complete-set-fast-top-up-enabled: true
+      complete-set-fast-top-up-min-shares: 0.01
+      complete-set-fast-top-up-min-seconds-after-fill: 2
+      complete-set-fast-top-up-max-seconds-after-fill: 120
+      complete-set-fast-top-up-cooldown-millis: 5000
+      complete-set-fast-top-up-min-edge: 0.0
 
       # ============================================================================
       # DIRECTIONAL BIAS (DISABLED - market-neutral approach)
@@ -64,6 +71,13 @@ hft:
       # ============================================================================
       directional-bias-enabled: false       # DISABLED - strategy is market-neutral
       directional-bias-factor: 1.5          # (unused when disabled)
+
+      # ============================================================================
+      # TAKER MODE (DISABLED - prefer maker + lagging-leg top-up)
+      # ============================================================================
+      taker-mode-enabled: false
+      taker-mode-max-edge: 0.015
+      taker-mode-max-spread: 0.02
 
 # Logging - enable debug for gabagool strategy
 logging:

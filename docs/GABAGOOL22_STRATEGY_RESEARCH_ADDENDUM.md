@@ -2,6 +2,50 @@
 
 This addendum summarizes what the current dataset can/can’t support for “exact” strategy matching, and lays out a concrete path to get to a high-fidelity replica as you keep collecting data.
 
+## Update (Frozen Snapshot 2025-12-19)
+
+Using `research/data/snapshots/gabagool22-20251219T215124+0000/`:
+
+- Trades: **44,093** (**100% BUY**), resolved: **39,864**
+- Notional: **~$324,967** (sum of `price * size`)
+- Realized PnL (resolved, fee-excluded): **~$6,898**
+- Market universe is still exactly BTC/ETH Up/Down:
+  - `btc-updown-15m-*`, `eth-updown-15m-*`
+  - `bitcoin-up-or-down-*`, `ethereum-up-or-down-*`
+- Outcome balance is roughly even (sample-dependent):
+  - Trades: `Up`=22,550, `Down`=21,543
+  - Resolved realized PnL: `Up`=-$4,276.66, `Down`=+$11,174.84 (directional split is expected in a regime; net is what matters)
+- Paired UP/DOWN behavior is extremely strong:
+  - **707 / 717** conditions have both outcomes (**98.6%**)
+  - Nearest opposite-leg timing (same condition): p50 **~10s**, p90 **~66s**; **~88.9%** within **60s**
+  - Pair-size imbalance is non-zero but typically modest: `Up/Down` total size ratio p50 **~1.07** (p90 **~2.19**)
+- Time-to-end sizing is **series-specific** (medians):
+  - **BTC 15m**: `<1m=11`, `1-3m=13`, `3-5m=17`, `5-10m=19`, `10-15m=20`
+  - **ETH 15m**: `<1m=8`, `1-3m=10`, `3-5m=12`, `5-10m=13`, `10-15m=14`
+  - **BTC 1h**: `<1m=9`, `1-3m=10`, `3-5m=11`, `5-10m=12`, `10-15m=14`, `15-20m=15`, `20-30m=17`, `30-60m=18`
+  - **ETH 1h**: `<1m=7`, `1-5m=8`, `5-10m=9`, `10-15m=11`, `15-20m=12`, `20-30m=13`, `30-60m=14`
+- Complete-set edge from `clob_tob` rows where both outcomes are present for a `trade_key`:
+  - `edge_bid = 1 - (bid_up + bid_down)` median **~0.01**, p90 **~0.02**
+  - `edge_bid_ask` (one leg crosses): median **~0.00** (break-even-ish)
+  - `edge_ask = 1 - (ask_up + ask_down)` median **~-0.01**
+- Data quality is still the main limiter for “exact clone”:
+  - `clob_tob` (trade-triggered) lag remains high: p50 **~62s**, p90 **~101s**
+  - Only **~47%** of `trade_key`s in `clob_tob` have **both** outcomes captured
+
+Tooling:
+- Run an offline report anytime with `research/snapshot_report.py`.
+
+Implementation status (as of this repo state):
+- `strategy-service/src/main/java/com/polybot/hft/polymarket/strategy/GabagoolDirectionalEngine.java` now:
+  - Uses **discrete series-aware sizing** (matches the medians above)
+  - Adds **FAST_TOP_UP** (lagging-leg taker top-up after a recent fill) to better match the observed pairing timing
+    - FAST_TOP_UP is now configurable independently of end-of-market top-ups via `complete-set-fast-top-up-min-shares`
+  - Bootstraps **per-market inventory** from Polymarket **positions snapshots** (so skew/top-up/exposure caps behave correctly after restarts)
+  - Keeps **order-status polling enabled** in paper/sim runs (so fills are observed and inventory updates in real time)
+  - Gates quoting on **planned quote prices** (not just displayed bids)
+  - Cancels/replace existing orders before placing a top-up (prevents hidden overexposure)
+- `strategy-service/src/main/resources/application-develop.yaml` disables symmetric taker mode (maker + top-up only).
+
 ## Current ClickHouse Snapshot (As Of 2025-12-17)
 
 High-level state from the live ClickHouse tables (not a frozen Parquet snapshot):

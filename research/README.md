@@ -42,6 +42,36 @@ Then:
 - `research/notebooks/03_model_and_tests.ipynb`
 - `research/notebooks/04_backtest_and_montecarlo.ipynb`
 
+## Offline snapshot report (no ClickHouse)
+
+If you have a frozen snapshot under `research/data/snapshots/`, you can generate a quick report without ClickHouse:
+
+```bash
+cd research
+python3 snapshot_report.py --snapshot data/snapshots/<snapshot-id> --write-md data/snapshots/<snapshot-id>/report.md
+```
+
+## Replication scores (ClickHouse)
+
+### Trade-print distribution match (candidate username vs gabagool22)
+
+```bash
+cd research
+python3 replication_score.py --candidate <your-username>
+python3 replication_score.py --candidate <your-username> --start-ts '2025-12-20 00:00:00' --end-ts '2025-12-21 00:00:00'
+```
+
+### Order-stream match for the live/paper bot (strategy decisions)
+
+This uses `polybot.strategy_gabagool_orders` + `polybot.executor_order_status` to score our bot’s
+decision stream against inferred gabagool22 distributions:
+
+```bash
+cd research
+python3 replication_score_orders.py --hours 24
+python3 replication_score_orders.py --hours 6 --run-id <your-run-id>
+```
+
 ## Connection defaults
 
 The notebooks default to:

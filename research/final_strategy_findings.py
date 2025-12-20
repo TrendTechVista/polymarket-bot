@@ -131,7 +131,8 @@ def main():
 
     down_wr = outcomes[outcomes['outcome'] == 'Down']['win_rate'].iloc[0]
     up_wr = outcomes[outcomes['outcome'] == 'Up']['win_rate'].iloc[0]
-    print(f"\n🎯 FINDING: DOWN bets win {down_wr}% vs UP {up_wr}% → FAVOR DOWN!")
+    print(f"\nNOTE: DOWN win-rate {down_wr}% vs UP {up_wr}% in this sample.")
+    print("WARNING: Do NOT hardcode directional bias; UP/DOWN profitability flips across regimes. The core strategy is market-neutral complete-set style execution.")
 
     # =========================================================================
     # SECTION 5: TIMING ANALYSIS

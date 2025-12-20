@@ -16,12 +16,6 @@
 
 CREATE OR REPLACE VIEW polybot.strategy_validation_v2 AS
 WITH
-    base_sizes AS (
-        SELECT 'btc-15m' AS series, 19.0 AS base_shares
-        UNION ALL SELECT 'eth-15m', 14.0
-        UNION ALL SELECT 'btc-1h', 18.0
-        UNION ALL SELECT 'eth-1h', 14.0
-    ),
     -- Taker mode parameters (matching GabagoolDirectionalEngine config)
     taker_params AS (
         SELECT
@@ -31,7 +25,47 @@ WITH
     decisions AS (
         SELECT
             t.*,
-            b.base_shares,
+            -- Discrete sizing by series + time-to-end bucket (medians from latest snapshots).
+            multiIf(
+                t.series = 'btc-15m',
+                    multiIf(
+                        ifNull(t.seconds_to_end, 0) < 60, 11.0,
+                        ifNull(t.seconds_to_end, 0) < 180, 13.0,
+                        ifNull(t.seconds_to_end, 0) < 300, 17.0,
+                        ifNull(t.seconds_to_end, 0) < 600, 19.0,
+                        20.0
+                    ),
+                t.series = 'eth-15m',
+                    multiIf(
+                        ifNull(t.seconds_to_end, 0) < 60, 8.0,
+                        ifNull(t.seconds_to_end, 0) < 180, 10.0,
+                        ifNull(t.seconds_to_end, 0) < 300, 12.0,
+                        ifNull(t.seconds_to_end, 0) < 600, 13.0,
+                        14.0
+                    ),
+                t.series = 'btc-1h',
+                    multiIf(
+                        ifNull(t.seconds_to_end, 0) < 60, 9.0,
+                        ifNull(t.seconds_to_end, 0) < 180, 10.0,
+                        ifNull(t.seconds_to_end, 0) < 300, 11.0,
+                        ifNull(t.seconds_to_end, 0) < 600, 12.0,
+                        ifNull(t.seconds_to_end, 0) < 900, 14.0,
+                        ifNull(t.seconds_to_end, 0) < 1200, 15.0,
+                        ifNull(t.seconds_to_end, 0) < 1800, 17.0,
+                        18.0
+                    ),
+                t.series = 'eth-1h',
+                    multiIf(
+                        ifNull(t.seconds_to_end, 0) < 60, 7.0,
+                        ifNull(t.seconds_to_end, 0) < 300, 8.0,
+                        ifNull(t.seconds_to_end, 0) < 600, 9.0,
+                        ifNull(t.seconds_to_end, 0) < 900, 11.0,
+                        ifNull(t.seconds_to_end, 0) < 1200, 12.0,
+                        ifNull(t.seconds_to_end, 0) < 1800, 13.0,
+                        14.0
+                    ),
+                0.0
+            ) AS base_shares,
 
             -- Time window check
             t.seconds_to_end >= 0 AND t.seconds_to_end <= 3600 AS in_time_window,
@@ -76,7 +110,6 @@ WITH
             ) AS likely_would_fill
 
         FROM polybot.user_trade_clean t
-        LEFT JOIN base_sizes b ON t.series = b.series
         WHERE t.username = 'gabagool22'
     )
 SELECT

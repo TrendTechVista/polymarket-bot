@@ -1,0 +1,275 @@
+# Polybot Alert Rules
+# These rules monitor critical conditions in the HFT system
+
+groups:
+  # ============================================================================
+  # SERVICE HEALTH ALERTS
+  # ============================================================================
+  - name: service_health
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"executor-service|strategy-service|ingestor-service|analytics-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been down for more than 1 minute."
+
+      - alert: ServiceHighMemoryUsage
+        expr: process_resident_memory_bytes{job=~".*-service"} > 2e9
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+        annotations:
+          summary: "High memory usage on {{ $labels.job }}"
+          description: "{{ $labels.job }} is using {{ $value | humanize }}B of memory."
+
+      - alert: ServiceHighCpuUsage
+        expr: rate(process_cpu_seconds_total{job=~".*-service"}[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+        annotations:
+          summary: "High CPU usage on {{ $labels.job }}"
+          description: "{{ $labels.job }} CPU usage is {{ $value | humanizePercentage }}."
+
+  # ============================================================================
+  # TRADING OPERATION ALERTS
+  # ============================================================================
+  - name: trading_operations
+    interval: 30s
+    rules:
+      - alert: OrderPlacementFailureRate
+        expr: |
+          rate(polybot_orders_failed_total[5m]) /
+          rate(polybot_orders_total[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+          category: trading
+        annotations:
+          summary: "High order failure rate"
+          description: "Order placement failure rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+      - alert: NoOrdersPlaced
+        expr: |
+          rate(polybot_orders_total[10m]) == 0
+          and on() hour() >= 9 and hour() <= 17
+        for: 10m
+        labels:
+          severity: warning
+          category: trading
+        annotations:
+          summary: "No orders placed in 10 minutes during trading hours"
+          description: "Strategy may not be finding opportunities or may be stuck."
+
+      - alert: UnexpectedDrawdown
+        expr: polybot_strategy_unrealized_pnl_usd < -100
+        for: 5m
+        labels:
+          severity: warning
+          category: risk
+        annotations:
+          summary: "Unrealized PnL drawdown exceeds -$100"
+          description: "Current unrealized PnL: ${{ $value }}. Check positions and market conditions."
+
+      - alert: DailyLossLimitApproaching
+        expr: polybot_strategy_daily_realized_pnl_usd < -50
+        for: 1m
+        labels:
+          severity: warning
+          category: risk
+        annotations:
+          summary: "Daily realized loss approaching limit"
+          description: "Daily PnL: ${{ $value }}. Consider stopping trading if loss continues."
+
+      - alert: DailyLossLimitBreached
+        expr: polybot_strategy_daily_realized_pnl_usd < -100
+        for: 1m
+        labels:
+          severity: critical
+          category: risk
+        annotations:
+          summary: "DAILY LOSS LIMIT BREACHED"
+          description: "Daily PnL: ${{ $value }}. STOP TRADING IMMEDIATELY. Review positions and strategy."
+
+      - alert: InventoryImbalanceHigh
+        expr: abs(polybot_strategy_inventory_imbalance) > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: risk
+        annotations:
+          summary: "High inventory imbalance"
+          description: "Inventory imbalance: {{ $value }} shares. Complete-set hedging may not be working correctly."
+
+      - alert: ExposureLimitApproaching
+        expr: polybot_strategy_total_exposure_usd / polybot_strategy_bankroll_usd > 0.15
+        for: 2m
+        labels:
+          severity: warning
+          category: risk
+        annotations:
+          summary: "Total exposure approaching limit"
+          description: "Exposure: {{ $value | humanizePercentage }} of bankroll. Limit is 20%."
+
+      - alert: ExposureLimitBreached
+        expr: polybot_strategy_total_exposure_usd / polybot_strategy_bankroll_usd > 0.20
+        for: 1m
+        labels:
+          severity: critical
+          category: risk
+        annotations:
+          summary: "EXPOSURE LIMIT BREACHED"
+          description: "Exposure: {{ $value | humanizePercentage }} of bankroll. Exceeds 20% limit. Stop new orders."
+
+  # ============================================================================
+  # MARKET DATA ALERTS
+  # ============================================================================
+  - name: market_data
+    interval: 30s
+    rules:
+      - alert: WebSocketDisconnected
+        expr: polybot_websocket_connected{type="market"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: data
+        annotations:
+          summary: "Market WebSocket disconnected"
+          description: "Market data WebSocket has been disconnected for more than 2 minutes. Strategy cannot operate safely."
+
+      - alert: StaleMarketData
+        expr: time() - polybot_last_market_update_timestamp_seconds > 60
+        for: 2m
+        labels:
+          severity: critical
+          category: data
+        annotations:
+          summary: "Stale market data"
+          description: "No market data updates received in {{ $value }}s. Last update was {{ $value }}s ago."
+
+      - alert: TopOfBookMissing
+        expr: |
+          rate(polybot_tob_missing_total[5m]) /
+          rate(polybot_quote_attempts_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: data
+        annotations:
+          summary: "High rate of missing TOB data"
+          description: "{{ $value | humanizePercentage }} of quote attempts are missing TOB data."
+
+  # ============================================================================
+  # EXECUTION QUALITY ALERTS
+  # ============================================================================
+  - name: execution_quality
+    interval: 30s
+    rules:
+      - alert: HighSlippage
+        expr: |
+          avg_over_time(polybot_order_slippage_ticks[10m]) > 5
+        for: 10m
+        labels:
+          severity: warning
+          category: execution
+        annotations:
+          summary: "High average slippage"
+          description: "Average slippage: {{ $value }} ticks over last 10 minutes. Expected: 0-1 ticks for maker orders."
+
+      - alert: LowFillRate
+        expr: |
+          rate(polybot_orders_filled_total[15m]) /
+          rate(polybot_orders_placed_total[15m]) < 0.5
+        for: 15m
+        labels:
+          severity: warning
+          category: execution
+        annotations:
+          summary: "Low order fill rate"
+          description: "Fill rate: {{ $value | humanizePercentage }}. Expected: >70%. Check market liquidity and quote prices."
+
+      - alert: ExcessiveCancellations
+        expr: |
+          rate(polybot_orders_cancelled_total[10m]) /
+          rate(polybot_orders_placed_total[10m]) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+          category: execution
+        annotations:
+          summary: "High order cancellation rate"
+          description: "Cancellation rate: {{ $value | humanizePercentage }}. May indicate strategy instability."
+
+  # ============================================================================
+  # SYSTEM RESOURCE ALERTS
+  # ============================================================================
+  - name: system_resources
+    interval: 30s
+    rules:
+      - alert: HighDiskUsage
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} /
+          node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+        annotations:
+          summary: "Low disk space"
+          description: "Disk usage: {{ $value | humanizePercentage }} available. Clean up logs or expand disk."
+
+      - alert: HighSystemMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+        annotations:
+          summary: "High system memory usage"
+          description: "System memory usage: {{ $value | humanizePercentage }}. Consider scaling resources."
+
+  # ============================================================================
+  # STRATEGY-SPECIFIC ALERTS (Gabagool)
+  # ============================================================================
+  - name: gabagool_strategy
+    interval: 30s
+    rules:
+      - alert: CompleteSetEdgeBelowThreshold
+        expr: polybot_gabagool_complete_set_edge < 0.009
+        for: 5m
+        labels:
+          severity: info
+          category: strategy
+        annotations:
+          summary: "Complete-set edge below threshold"
+          description: "Current edge: {{ $value }}. Threshold: 0.01 (1%). Strategy may not find opportunities."
+
+      - alert: MarketDiscoveryFailure
+        expr: polybot_gabagool_active_markets_count == 0
+        for: 5m
+        labels:
+          severity: critical
+          category: strategy
+        annotations:
+          summary: "No active markets discovered"
+          description: "Gabagool market discovery returned 0 markets. Check Polymarket API and market schedule."
+
+      - alert: FastTopUpNotTriggering
+        expr: |
+          rate(polybot_gabagool_top_up_total{type="fast"}[30m]) == 0
+          and rate(polybot_orders_filled_total[30m]) > 0
+        for: 30m
+        labels:
+          severity: warning
+          category: strategy
+        annotations:
+          summary: "Fast top-ups not triggering"
+          description: "Orders are filling but no fast top-ups detected. Complete-set hedging may be broken."

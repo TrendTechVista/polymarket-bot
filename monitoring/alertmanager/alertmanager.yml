@@ -1,0 +1,167 @@
+# Alertmanager Configuration for Polybot
+# Handles alert routing and notification delivery
+
+global:
+  # How often to group alerts before sending
+  resolve_timeout: 5m
+
+  # Slack configuration (set via environment variables)
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+
+# Alert routing tree
+route:
+  # Default receiver for all alerts
+  receiver: 'slack-general'
+
+  # Group alerts by these labels
+  group_by: ['alertname', 'severity', 'category']
+
+  # Wait time before sending first notification
+  group_wait: 30s
+
+  # Wait time before sending notification about new alerts in existing group
+  group_interval: 5m
+
+  # Wait time before re-sending alert if not resolved
+  repeat_interval: 4h
+
+  # Route-specific configurations
+  routes:
+    # Critical alerts - immediate notification, no grouping delay
+    - match:
+        severity: critical
+      receiver: 'slack-critical'
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 30m
+      continue: true  # Also send to general channel
+
+    # Risk-related alerts - separate channel
+    - match:
+        category: risk
+      receiver: 'slack-risk'
+      group_wait: 30s
+      repeat_interval: 1h
+
+    # Trading operations - separate channel
+    - match:
+        category: trading
+      receiver: 'slack-trading'
+      group_wait: 1m
+      repeat_interval: 2h
+
+    # Data quality issues
+    - match:
+        category: data
+      receiver: 'slack-data'
+      group_wait: 2m
+      repeat_interval: 2h
+
+# Inhibition rules - suppress less urgent alerts when more urgent ones are firing
+inhibit_rules:
+  # If service is down, don't alert about high CPU/memory
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match:
+      severity: 'warning'
+    equal: ['job']
+
+  # If daily loss limit breached, don't alert about approaching limit
+  - source_match:
+      alertname: 'DailyLossLimitBreached'
+    target_match:
+      alertname: 'DailyLossLimitApproaching'
+
+  # If exposure limit breached, don't alert about approaching limit
+  - source_match:
+      alertname: 'ExposureLimitBreached'
+    target_match:
+      alertname: 'ExposureLimitApproaching'
+
+# Notification receivers
+receivers:
+  # General Slack channel - all alerts
+  - name: 'slack-general'
+    slack_configs:
+      - channel: '#polybot-alerts'
+        title: '{{ .GroupLabels.alertname }}'
+        text: |-
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Severity:* {{ .Labels.severity }}
+          *Description:* {{ .Annotations.description }}
+          *Time:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+        send_resolved: true
+        color: |-
+          {{ if eq .Status "firing" }}
+            {{ if eq .GroupLabels.severity "critical" }}danger{{ else }}warning{{ end }}
+          {{ else }}good{{ end }}
+
+  # Critical alerts - urgent Slack channel with @here mention
+  - name: 'slack-critical'
+    slack_configs:
+      - channel: '#polybot-critical'
+        title: ':rotating_light: CRITICAL ALERT: {{ .GroupLabels.alertname }}'
+        text: |-
+          <!here> *IMMEDIATE ACTION REQUIRED*
+
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Time:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          *Instance:* {{ .Labels.instance }}
+          {{ end }}
+
+          *Action Items:*
+          1. Check service logs immediately
+          2. Verify positions and exposure
+          3. Consider stopping trading if risk-related
+        send_resolved: true
+        color: 'danger'
+
+  # Risk management alerts
+  - name: 'slack-risk'
+    slack_configs:
+      - channel: '#polybot-risk'
+        title: ':warning: Risk Alert: {{ .GroupLabels.alertname }}'
+        text: |-
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Time:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+        send_resolved: true
+        color: 'warning'
+
+  # Trading operations alerts
+  - name: 'slack-trading'
+    slack_configs:
+      - channel: '#polybot-trading'
+        title: ':chart_with_upwards_trend: Trading Alert: {{ .GroupLabels.alertname }}'
+        text: |-
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Time:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+        send_resolved: true
+        color: 'warning'
+
+  # Data quality alerts
+  - name: 'slack-data'
+    slack_configs:
+      - channel: '#polybot-data'
+        title: ':database: Data Alert: {{ .GroupLabels.alertname }}'
+        text: |-
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Time:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+        send_resolved: true
+        color: 'warning'
+
+# Templates for notification formatting
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'

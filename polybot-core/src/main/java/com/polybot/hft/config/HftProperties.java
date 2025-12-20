@@ -284,7 +284,38 @@ public record HftProperties(
   }
 
   private static Gabagool defaultGabagool() {
-    return new Gabagool(false, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+    return new Gabagool(
+        false,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+    );
   }
 
   /**
@@ -352,6 +383,37 @@ public record HftProperties(
        * Only perform top-ups when the per-market share imbalance is at least this amount.
        */
       @NotNull @PositiveOrZero BigDecimal completeSetTopUpMinShares,
+      /**
+       * When enabled, perform a fast top-up (taker-like) shortly after one leg fills,
+       * to quickly complete the paired position (complete-set style).
+       *
+       * This is the key mechanism to match the observed UP/DOWN pairing timing (median ~10s, p90 ~66s).
+       */
+      @NotNull Boolean completeSetFastTopUpEnabled,
+      /**
+       * Minimum per-market share imbalance required to trigger a fast top-up.
+       *
+       * This should typically be low (e.g., 0.01–1.0) because gabagool22 often trades in small sizes (5–20 shares),
+       * and the pairing behavior applies at those sizes too.
+       */
+      @NotNull @PositiveOrZero BigDecimal completeSetFastTopUpMinShares,
+      /**
+       * Minimum delay after a leading-leg fill before attempting a fast top-up.
+       */
+      @NotNull @Min(0) Long completeSetFastTopUpMinSecondsAfterFill,
+      /**
+       * Maximum delay window after a leading-leg fill where fast top-up is allowed.
+       */
+      @NotNull @Min(0) Long completeSetFastTopUpMaxSecondsAfterFill,
+      /**
+       * Cooldown between fast top-up attempts per market to avoid spamming taker orders.
+       */
+      @NotNull @Min(0) Long completeSetFastTopUpCooldownMillis,
+      /**
+       * Minimum estimated hedged edge required for a fast top-up (edge = 1 - (leadFillPrice + laggingAsk)).
+       * Use 0.0 for breakeven-or-better hedging.
+       */
+      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double completeSetFastTopUpMinEdge,
       /**
        * Enable directional bias based on order book imbalance.
        * When enabled, quotes more aggressively on the side favored by book imbalance.
@@ -435,6 +497,24 @@ public record HftProperties(
       }
       if (completeSetTopUpMinShares == null) {
         completeSetTopUpMinShares = BigDecimal.valueOf(10);
+      }
+      if (completeSetFastTopUpEnabled == null) {
+        completeSetFastTopUpEnabled = true;
+      }
+      if (completeSetFastTopUpMinShares == null) {
+        completeSetFastTopUpMinShares = BigDecimal.ONE;
+      }
+      if (completeSetFastTopUpMinSecondsAfterFill == null) {
+        completeSetFastTopUpMinSecondsAfterFill = 2L;
+      }
+      if (completeSetFastTopUpMaxSecondsAfterFill == null) {
+        completeSetFastTopUpMaxSecondsAfterFill = 120L;
+      }
+      if (completeSetFastTopUpCooldownMillis == null) {
+        completeSetFastTopUpCooldownMillis = 5_000L;
+      }
+      if (completeSetFastTopUpMinEdge == null) {
+        completeSetFastTopUpMinEdge = 0.0;
       }
       if (directionalBiasEnabled == null) {
         directionalBiasEnabled = false;  // Disabled by default for safety

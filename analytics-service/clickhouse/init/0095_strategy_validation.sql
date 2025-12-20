@@ -39,7 +39,7 @@ WITH
             ) AS other_token_id
         FROM polybot.user_trade_enriched_v3
         WHERE username = 'gabagool22'
-          AND market_slug LIKE '%updown%' OR market_slug LIKE '%up-or-down%'
+          AND (market_slug LIKE '%updown%' OR market_slug LIKE '%up-or-down%')
     ),
     -- Get other side's book state from the WS TOB (ASOF join)
     with_other_tob AS (
@@ -52,7 +52,7 @@ WITH
             (tob.best_bid_price + tob.best_ask_price) / 2 AS other_mid
         FROM market_series m
         ASOF LEFT JOIN polybot.market_ws_tob tob
-            ON m.other_token_id = tob.token_id AND m.ts >= tob.ts
+            ON m.other_token_id = tob.asset_id AND m.ts >= tob.ts
     )
 SELECT
     ts,
@@ -123,19 +123,51 @@ WITH
             0 AS improve_ticks,  -- quote AT best bid
             0.01 AS tick_size
     ),
-    -- Base sizing by series (from research)
-    base_sizes AS (
-        SELECT
-            'btc-15m' AS series, 19.0 AS base_shares
-        UNION ALL SELECT 'eth-15m', 14.0
-        UNION ALL SELECT 'btc-1h', 18.0
-        UNION ALL SELECT 'eth-1h', 14.0
-    ),
     -- Apply strategy logic
     decisions AS (
         SELECT
             r.*,
-            b.base_shares,
+            -- Discrete sizing by series + time-to-end bucket (medians from latest snapshots).
+            multiIf(
+                r.series = 'btc-15m',
+                    multiIf(
+                        ifNull(r.seconds_to_end, 0) < 60, 11.0,
+                        ifNull(r.seconds_to_end, 0) < 180, 13.0,
+                        ifNull(r.seconds_to_end, 0) < 300, 17.0,
+                        ifNull(r.seconds_to_end, 0) < 600, 19.0,
+                        20.0
+                    ),
+                r.series = 'eth-15m',
+                    multiIf(
+                        ifNull(r.seconds_to_end, 0) < 60, 8.0,
+                        ifNull(r.seconds_to_end, 0) < 180, 10.0,
+                        ifNull(r.seconds_to_end, 0) < 300, 12.0,
+                        ifNull(r.seconds_to_end, 0) < 600, 13.0,
+                        14.0
+                    ),
+                r.series = 'btc-1h',
+                    multiIf(
+                        ifNull(r.seconds_to_end, 0) < 60, 9.0,
+                        ifNull(r.seconds_to_end, 0) < 180, 10.0,
+                        ifNull(r.seconds_to_end, 0) < 300, 11.0,
+                        ifNull(r.seconds_to_end, 0) < 600, 12.0,
+                        ifNull(r.seconds_to_end, 0) < 900, 14.0,
+                        ifNull(r.seconds_to_end, 0) < 1200, 15.0,
+                        ifNull(r.seconds_to_end, 0) < 1800, 17.0,
+                        18.0
+                    ),
+                r.series = 'eth-1h',
+                    multiIf(
+                        ifNull(r.seconds_to_end, 0) < 60, 7.0,
+                        ifNull(r.seconds_to_end, 0) < 300, 8.0,
+                        ifNull(r.seconds_to_end, 0) < 600, 9.0,
+                        ifNull(r.seconds_to_end, 0) < 900, 11.0,
+                        ifNull(r.seconds_to_end, 0) < 1200, 12.0,
+                        ifNull(r.seconds_to_end, 0) < 1800, 13.0,
+                        14.0
+                    ),
+                0.0
+            ) AS base_shares,
 
             -- Time window check
             r.seconds_to_end >= (SELECT min_seconds_to_end FROM params)
@@ -162,7 +194,6 @@ WITH
             r.actual_fill_price - r.our_best_bid AS price_diff_vs_our_quote
 
         FROM polybot.strategy_replay_input r
-        LEFT JOIN base_sizes b ON r.series = b.series
     )
 SELECT
     ts,

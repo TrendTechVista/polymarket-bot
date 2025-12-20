@@ -24,13 +24,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Discovers active Up/Down markets from Polymarket Gamma API.
  * These are the markets gabagool22 trades.
  *
- * MARKET BREAKDOWN (from 21,305 trades analysis):
- * - 15min-BTC: $1,680 PnL, 52.44% win rate (BEST PERFORMER)
- * - 15min-ETH: $544 PnL, 50.91% win rate
- * - 1hour-ETH: $162 PnL, 50.48% win rate
- * - 1hour-BTC: $93 PnL, 49.73% win rate
- *
- * Strategy: Focus on 15min-BTC but also trade other markets for diversification.
+ * Notes:
+ * - Market universe is stable: BTC/ETH Up/Down 15m + 1h series only.
+ * - The replica strategy is intended to be market-neutral (no BTC direction bias); alpha is driven by
+ *   platform mispricing + timing/execution, not by predicting Up vs Down.
  */
 @Component
 @Slf4j

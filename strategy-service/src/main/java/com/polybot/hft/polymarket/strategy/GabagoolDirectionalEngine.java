@@ -73,7 +73,7 @@ public class GabagoolDirectionalEngine {
     private final AtomicReference<List<GabagoolMarket>> activeMarkets = new AtomicReference<>(List.of());
 
     private final AtomicReference<PositionsCache> positionsCache = new AtomicReference<>(
-            new PositionsCache(Instant.EPOCH, Map.of(), BigDecimal.ZERO)
+            new PositionsCache(Instant.EPOCH, Map.of(), Map.of(), BigDecimal.ZERO)
     );
 
     // Per-market inventory tracking for complete-set coordination (marketSlug -> MarketInventory)
@@ -98,13 +98,19 @@ public class GabagoolDirectionalEngine {
                 cfg.bankrollUsd(),
                 cfg.maxOrderBankrollFraction(),
                 cfg.maxTotalBankrollFraction());
-        log.info("gabagool complete-set config (minEdge={}, maxSkewTicks={}, imbalanceForMaxSkew={}, topUpEnabled={}, topUpSecondsToEnd={}, topUpMinShares={})",
+        log.info("gabagool complete-set config (minEdge={}, maxSkewTicks={}, imbalanceForMaxSkew={}, topUpEnabled={}, topUpSecondsToEnd={}, topUpMinShares={}, fastTopUpEnabled={}, fastTopUpMinShares={}, fastTopUpMinAfterFillS={}, fastTopUpMaxAfterFillS={}, fastTopUpCooldownMs={}, fastTopUpMinEdge={})",
                 cfg.completeSetMinEdge(),
                 cfg.completeSetMaxSkewTicks(),
                 cfg.completeSetImbalanceSharesForMaxSkew(),
                 cfg.completeSetTopUpEnabled(),
                 cfg.completeSetTopUpSecondsToEnd(),
-                cfg.completeSetTopUpMinShares());
+                cfg.completeSetTopUpMinShares(),
+                cfg.completeSetFastTopUpEnabled(),
+                cfg.completeSetFastTopUpMinShares(),
+                cfg.completeSetFastTopUpMinSecondsAfterFill(),
+                cfg.completeSetFastTopUpMaxSecondsAfterFill(),
+                cfg.completeSetFastTopUpCooldownMillis(),
+                cfg.completeSetFastTopUpMinEdge());
         log.info("gabagool directional-bias config (enabled={}, factor={})",
                 cfg.directionalBiasEnabled(),
                 cfg.directionalBiasFactor());
@@ -177,29 +183,68 @@ public class GabagoolDirectionalEngine {
         if (now == null) {
             return;
         }
-        if (properties.mode() == HftProperties.TradingMode.PAPER) {
-            return;
-        }
         PositionsCache cached = positionsCache.get();
         if (cached != null && cached.fetchedAt() != null && Duration.between(cached.fetchedAt(), now).compareTo(POSITIONS_CACHE_TTL) < 0) {
             return;
         }
 
         try {
-            positionsCache.set(fetchPositionsCache(now));
+            PositionsCache next = fetchPositionsCache(now);
+            positionsCache.set(next);
+            syncInventoryFromPositions(next);
             resetFillsSincePositionsRefresh(now);
         } catch (Exception e) {
             PositionsCache existing = positionsCache.get();
             if (existing == null) {
-                positionsCache.set(new PositionsCache(now, Map.of(), BigDecimal.ZERO));
+                positionsCache.set(new PositionsCache(now, Map.of(), Map.of(), BigDecimal.ZERO));
             } else {
                 positionsCache.set(new PositionsCache(
                         now,
+                        existing.sharesByTokenId() == null ? Map.of() : existing.sharesByTokenId(),
                         existing.openNotionalByTokenId() == null ? Map.of() : existing.openNotionalByTokenId(),
                         existing.openNotionalUsd() == null ? BigDecimal.ZERO : existing.openNotionalUsd()
                 ));
             }
             log.debug("positions refresh failed: {}", e.getMessage());
+        }
+    }
+
+    private void syncInventoryFromPositions(PositionsCache cache) {
+        if (cache == null || cache.sharesByTokenId() == null || cache.sharesByTokenId().isEmpty()) {
+            return;
+        }
+
+        Map<String, BigDecimal> sharesByTokenId = cache.sharesByTokenId();
+        List<GabagoolMarket> markets = activeMarkets.get();
+        if (markets == null || markets.isEmpty()) {
+            return;
+        }
+
+        for (GabagoolMarket market : markets) {
+            if (market == null) {
+                continue;
+            }
+            if (market.slug() == null || market.slug().isBlank()) {
+                continue;
+            }
+            if (market.upTokenId() == null || market.upTokenId().isBlank()
+                    || market.downTokenId() == null || market.downTokenId().isBlank()) {
+                continue;
+            }
+            BigDecimal upShares = sharesByTokenId.getOrDefault(market.upTokenId(), BigDecimal.ZERO);
+            BigDecimal downShares = sharesByTokenId.getOrDefault(market.downTokenId(), BigDecimal.ZERO);
+            inventoryByMarket.compute(market.slug(), (k, prev) -> {
+                MarketInventory current = prev == null ? MarketInventory.empty() : prev;
+                return new MarketInventory(
+                        upShares,
+                        downShares,
+                        current.lastUpFillAt(),
+                        current.lastDownFillAt(),
+                        current.lastUpFillPrice(),
+                        current.lastDownFillPrice(),
+                        current.lastTopUpAt()
+                );
+            });
         }
     }
 
@@ -213,6 +258,7 @@ public class GabagoolDirectionalEngine {
         int limit = 200;
         int maxOffset = 2_000;
 
+        Map<String, BigDecimal> sharesByTokenId = new HashMap<>();
         Map<String, BigDecimal> notionalByTokenId = new HashMap<>();
         BigDecimal totalNotional = BigDecimal.ZERO;
 
@@ -228,6 +274,13 @@ public class GabagoolDirectionalEngine {
                 }
                 if (Boolean.TRUE.equals(p.redeemable())) {
                     continue;
+                }
+                if (p.asset() != null && !p.asset().isBlank() && p.size() != null) {
+                    BigDecimal shares = p.size();
+                    if (shares.compareTo(BigDecimal.ZERO) < 0) {
+                        shares = shares.abs();
+                    }
+                    sharesByTokenId.merge(p.asset(), shares, BigDecimal::add);
                 }
                 BigDecimal initialValue = p.initialValue();
                 if (initialValue == null) {
@@ -247,7 +300,7 @@ public class GabagoolDirectionalEngine {
             }
         }
 
-        return new PositionsCache(now, notionalByTokenId, totalNotional);
+        return new PositionsCache(now, sharesByTokenId, notionalByTokenId, totalNotional);
     }
 
     /**
@@ -283,8 +336,8 @@ public class GabagoolDirectionalEngine {
         TopOfBook upBook = marketWs.getTopOfBook(market.upTokenId()).orElse(null);
         TopOfBook downBook = marketWs.getTopOfBook(market.downTokenId()).orElse(null);
 
-        // ========== COMPLETE-SET EDGE CHECK ==========
-        // Only quote when we have fresh TOB for BOTH outcomes and edge is sufficient
+        // ========== BOOK FRESHNESS CHECK ==========
+        // Only quote when we have fresh TOB for BOTH outcomes
         if (upBook == null || downBook == null || isStale(upBook) || isStale(downBook)) {
             if (upBook == null || isStale(upBook)) {
                 cancelTokenOrder(market.upTokenId(), CancelReason.BOOK_STALE, secondsToEnd, upBook, downBook);
@@ -295,34 +348,12 @@ public class GabagoolDirectionalEngine {
             return;
         }
 
-        // Calculate complete-set edge: 1.0 - (bid_up + bid_down)
-        // This is the theoretical profit if we buy both sides at bid and they resolve
-        BigDecimal bidUp = upBook.bestBid();
-        BigDecimal bidDown = downBook.bestBid();
-        if (bidUp == null || bidDown == null) {
-            cancelMarketOrders(market, CancelReason.BOOK_STALE, secondsToEnd);
-            return;
-        }
-
-        BigDecimal completeSetCost = bidUp.add(bidDown);
-        BigDecimal completeSetEdge = BigDecimal.ONE.subtract(completeSetCost);
-        BigDecimal minEdgeBD = BigDecimal.valueOf(cfg.completeSetMinEdge());
-
-        // Use BigDecimal comparison to avoid floating-point precision issues
-        // (e.g., 0.009999999999999953 should be treated as >= 0.01)
-        if (completeSetEdge.compareTo(minEdgeBD) < 0) {
-            log.debug("GABAGOOL: Skipping {} - complete-set edge {} < min {} (bid_up={}, bid_down={})",
-                    market.slug(), completeSetEdge, minEdgeBD, bidUp, bidDown);
-            cancelMarketOrders(market, CancelReason.INSUFFICIENT_EDGE, secondsToEnd);
-            return;
-        }
-
         // ========== INVENTORY TRACKING & SKEW ==========
         MarketInventory inv = inventoryByMarket.computeIfAbsent(market.slug(),
-                k -> new MarketInventory(BigDecimal.ZERO, BigDecimal.ZERO));
+                k -> MarketInventory.empty());
 
         // Calculate imbalance: positive = more UP shares, negative = more DOWN shares
-        BigDecimal imbalance = inv.upShares().subtract(inv.downShares());
+        BigDecimal imbalance = inv.imbalance();
         int skewTicksUp = 0;
         int skewTicksDown = 0;
 
@@ -345,6 +376,10 @@ public class GabagoolDirectionalEngine {
             }
         }
 
+        // ========== FAST TOP-UP (after recent fill) ==========
+        // If one leg just filled, cross the spread on the lagging leg to complete the pair quickly.
+        maybeFastTopUpLaggingLeg(market, inv, imbalance, upBook, downBook, cfg, secondsToEnd);
+
         // ========== TAKER TOP-UP (near market end) ==========
         // If imbalanced near end, cross the spread on lagging leg to rebalance
         if (cfg.completeSetTopUpEnabled() && secondsToEnd <= cfg.completeSetTopUpSecondsToEnd()) {
@@ -355,8 +390,33 @@ public class GabagoolDirectionalEngine {
                 String laggingTokenId = laggingLeg == Direction.UP ? market.upTokenId() : market.downTokenId();
 
                 maybeTopUpLaggingLeg(market, laggingTokenId, laggingLeg, laggingBook,
-                        laggingLeg == Direction.UP ? downBook : upBook, cfg, secondsToEnd, absImbalance);
+                        laggingLeg == Direction.UP ? downBook : upBook, cfg, secondsToEnd, absImbalance, PlaceReason.TOP_UP);
             }
+        }
+
+        // ========== COMPLETE-SET EDGE CHECK (PLANNED QUOTES) ==========
+        // Gate on the edge implied by the prices we will actually quote (not just the displayed bids).
+        BigDecimal upTickSize = getTickSize(market.upTokenId());
+        BigDecimal downTickSize = getTickSize(market.downTokenId());
+        if (upTickSize == null || downTickSize == null) {
+            cancelMarketOrders(market, CancelReason.BOOK_STALE, secondsToEnd);
+            return;
+        }
+        BigDecimal upEntryPrice = calculateMakerEntryPriceWithSkew(upBook, upTickSize, cfg, skewTicksUp);
+        BigDecimal downEntryPrice = calculateMakerEntryPriceWithSkew(downBook, downTickSize, cfg, skewTicksDown);
+        if (upEntryPrice == null || downEntryPrice == null) {
+            cancelMarketOrders(market, CancelReason.BOOK_STALE, secondsToEnd);
+            return;
+        }
+
+        BigDecimal plannedCost = upEntryPrice.add(downEntryPrice);
+        BigDecimal plannedEdge = BigDecimal.ONE.subtract(plannedCost);
+        BigDecimal minEdgeBD = BigDecimal.valueOf(cfg.completeSetMinEdge());
+        if (plannedEdge.compareTo(minEdgeBD) < 0) {
+            log.debug("GABAGOOL: Skipping {} - planned complete-set edge {} < min {} (upEntry={}, downEntry={})",
+                    market.slug(), plannedEdge, minEdgeBD, upEntryPrice, downEntryPrice);
+            cancelMarketOrders(market, CancelReason.INSUFFICIENT_EDGE, secondsToEnd);
+            return;
         }
 
         // ========== DIRECTIONAL BIAS (based on book imbalance) ==========
@@ -402,21 +462,85 @@ public class GabagoolDirectionalEngine {
             }
         }
 
-        // ========== DECIDE: MAKER vs TAKER MODE ==========
-        // Gabagool22 takes ~39% of the time, especially when:
-        //   - Edge is low (<1.5%) - opportunity is fleeting
-        //   - Spread is tight (1-2 ticks) - taker cost is acceptable
-        boolean shouldTake = decideTakerMode(completeSetEdge, upBook, downBook, cfg);
+        // ========== MAKER MODE: Quote at bid with skew and directional bias ==========
+        // NOTE: taker-like behavior is handled via lagging-leg top-ups (FAST_TOP_UP / TOP_UP),
+        // not symmetric taker-on-both.
+        maybeQuoteTokenWithSkew(market, market.upTokenId(), Direction.UP, upBook, downBook, cfg, secondsToEnd, skewTicksUp, upSizeFactor);
+        maybeQuoteTokenWithSkew(market, market.downTokenId(), Direction.DOWN, downBook, upBook, cfg, secondsToEnd, skewTicksDown, downSizeFactor);
+    }
 
-        if (shouldTake) {
-            // ========== TAKER MODE: Cross the spread to get immediate fills ==========
-            maybeTakeToken(market, market.upTokenId(), Direction.UP, upBook, downBook, cfg, secondsToEnd, upSizeFactor);
-            maybeTakeToken(market, market.downTokenId(), Direction.DOWN, downBook, upBook, cfg, secondsToEnd, downSizeFactor);
-        } else {
-            // ========== MAKER MODE: Quote at bid with skew and directional bias ==========
-            maybeQuoteTokenWithSkew(market, market.upTokenId(), Direction.UP, upBook, downBook, cfg, secondsToEnd, skewTicksUp, upSizeFactor);
-            maybeQuoteTokenWithSkew(market, market.downTokenId(), Direction.DOWN, downBook, upBook, cfg, secondsToEnd, skewTicksDown, downSizeFactor);
+    private void maybeFastTopUpLaggingLeg(GabagoolMarket market,
+                                         MarketInventory inv,
+                                         BigDecimal imbalance,
+                                         TopOfBook upBook,
+                                         TopOfBook downBook,
+                                         GabagoolConfig cfg,
+                                         long secondsToEnd) {
+        if (market == null || inv == null || imbalance == null || upBook == null || downBook == null || cfg == null) {
+            return;
         }
+        if (!cfg.completeSetFastTopUpEnabled()) {
+            return;
+        }
+
+        BigDecimal absImbalance = imbalance.abs();
+        if (absImbalance.compareTo(cfg.completeSetFastTopUpMinShares()) < 0) {
+            return;
+        }
+
+        Instant now = clock.instant();
+        if (inv.lastTopUpAt() != null && Duration.between(inv.lastTopUpAt(), now).toMillis() < cfg.completeSetFastTopUpCooldownMillis()) {
+            return;
+        }
+
+        Direction laggingLeg = imbalance.compareTo(BigDecimal.ZERO) > 0 ? Direction.DOWN : Direction.UP;
+        Instant leadFillAt = laggingLeg == Direction.DOWN ? inv.lastUpFillAt() : inv.lastDownFillAt();
+        if (leadFillAt == null) {
+            return;
+        }
+
+        long sinceLeadFillSeconds = Duration.between(leadFillAt, now).getSeconds();
+        if (sinceLeadFillSeconds < cfg.completeSetFastTopUpMinSecondsAfterFill()
+                || sinceLeadFillSeconds > cfg.completeSetFastTopUpMaxSecondsAfterFill()) {
+            return;
+        }
+
+        Instant lagFillAt = laggingLeg == Direction.DOWN ? inv.lastDownFillAt() : inv.lastUpFillAt();
+        if (lagFillAt != null && !lagFillAt.isBefore(leadFillAt)) {
+            return;
+        }
+
+        TopOfBook laggingBook = laggingLeg == Direction.UP ? upBook : downBook;
+        TopOfBook otherBook = laggingLeg == Direction.UP ? downBook : upBook;
+        String laggingTokenId = laggingLeg == Direction.UP ? market.upTokenId() : market.downTokenId();
+
+        if (laggingBook.bestBid() == null || laggingBook.bestAsk() == null) {
+            return;
+        }
+        BigDecimal spread = laggingBook.bestAsk().subtract(laggingBook.bestBid());
+        if (spread.compareTo(cfg.takerModeMaxSpread()) > 0) {
+            return;
+        }
+
+        BigDecimal leadFillPrice = laggingLeg == Direction.DOWN ? inv.lastUpFillPrice() : inv.lastDownFillPrice();
+        if (leadFillPrice == null) {
+            leadFillPrice = laggingLeg == Direction.DOWN ? upBook.bestBid() : downBook.bestBid();
+        }
+        if (leadFillPrice != null) {
+            BigDecimal hedgedEdge = BigDecimal.ONE.subtract(leadFillPrice.add(laggingBook.bestAsk()));
+            BigDecimal minEdge = BigDecimal.valueOf(cfg.completeSetFastTopUpMinEdge());
+            if (hedgedEdge.compareTo(minEdge) < 0) {
+                return;
+            }
+        }
+
+        // Mark attempt to avoid spamming (even if the order submission fails).
+        inventoryByMarket.compute(market.slug(), (k, cur) -> {
+            MarketInventory current = cur == null ? MarketInventory.empty() : cur;
+            return current.markTopUp(now);
+        });
+
+        maybeTopUpLaggingLeg(market, laggingTokenId, laggingLeg, laggingBook, otherBook, cfg, secondsToEnd, absImbalance, PlaceReason.FAST_TOP_UP);
     }
 
     /**
@@ -603,9 +727,13 @@ public class GabagoolDirectionalEngine {
      * This ensures we end up with balanced UP/DOWN positions for complete-set settlement.
      */
     private void maybeTopUpLaggingLeg(GabagoolMarket market, String tokenId, Direction direction,
-                                       TopOfBook book, TopOfBook otherBook, GabagoolConfig cfg,
-                                       long secondsToEnd, BigDecimal imbalanceShares) {
+                                      TopOfBook book, TopOfBook otherBook, GabagoolConfig cfg,
+                                      long secondsToEnd, BigDecimal imbalanceShares, PlaceReason placeReason) {
         if (tokenId == null || tokenId.isBlank() || book == null) {
+            return;
+        }
+
+        if (imbalanceShares == null || imbalanceShares.compareTo(BigDecimal.valueOf(0.01)) < 0) {
             return;
         }
 
@@ -614,8 +742,16 @@ public class GabagoolDirectionalEngine {
             return;
         }
 
-        // Calculate top-up size: fill up to the imbalance, but respect caps
-        BigDecimal topUpShares = imbalanceShares.min(cfg.completeSetTopUpMinShares().multiply(BigDecimal.valueOf(2)));
+        BigDecimal bestBid = book.bestBid();
+        if (bestBid != null) {
+            BigDecimal spread = bestAsk.subtract(bestBid);
+            if (spread.compareTo(cfg.takerModeMaxSpread()) > 0) {
+                return;
+            }
+        }
+
+        // Top-up size: attempt to fully close the imbalance (caps still apply below).
+        BigDecimal topUpShares = imbalanceShares;
 
         // Check exposure caps
         BigDecimal notional = topUpShares.multiply(bestAsk);
@@ -623,19 +759,42 @@ public class GabagoolDirectionalEngine {
         if (bankrollUsd != null && bankrollUsd.compareTo(BigDecimal.ZERO) > 0) {
             if (cfg.maxOrderBankrollFraction() > 0) {
                 BigDecimal perOrderCap = bankrollUsd.multiply(BigDecimal.valueOf(cfg.maxOrderBankrollFraction()));
-                if (notional.compareTo(perOrderCap) > 0) {
-                    topUpShares = perOrderCap.divide(bestAsk, 2, RoundingMode.DOWN);
+                BigDecimal capShares = perOrderCap.divide(bestAsk, 2, RoundingMode.DOWN);
+                topUpShares = topUpShares.min(capShares);
+            }
+            if (cfg.maxTotalBankrollFraction() > 0) {
+                BigDecimal totalCap = bankrollUsd.multiply(BigDecimal.valueOf(cfg.maxTotalBankrollFraction()));
+                BigDecimal open = currentExposureNotionalUsd();
+                BigDecimal remaining = totalCap.subtract(open);
+                if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                    return;
                 }
+                BigDecimal capShares = remaining.divide(bestAsk, 2, RoundingMode.DOWN);
+                topUpShares = topUpShares.min(capShares);
             }
         }
 
+        // Global per-order cap from risk config (USDC notional).
+        BigDecimal maxNotionalUsd = properties.risk().maxOrderNotionalUsd();
+        if (maxNotionalUsd != null && maxNotionalUsd.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal capShares = maxNotionalUsd.divide(bestAsk, 2, RoundingMode.DOWN);
+            topUpShares = topUpShares.min(capShares);
+        }
+
+        topUpShares = topUpShares.setScale(2, RoundingMode.DOWN);
         if (topUpShares.compareTo(BigDecimal.valueOf(0.01)) < 0) {
             return;
         }
 
-        // Don't top-up if we already have an open order on this token
-        if (ordersByTokenId.containsKey(tokenId)) {
-            return;
+        // Cancel/replace any existing open order on this token before top-up.
+        OrderState existing = ordersByTokenId.get(tokenId);
+        if (existing != null) {
+            long ageMillis = Duration.between(existing.placedAt(), clock.instant()).toMillis();
+            if (ageMillis < cfg.minReplaceMillis()) {
+                return;
+            }
+            safeCancel(existing, CancelReason.REPLACE_PRICE, secondsToEnd, book, otherBook);
+            ordersByTokenId.remove(tokenId);
         }
 
         log.info("GABAGOOL: TOP-UP {} on {} at ask {} (imbalance={}, topUpShares={}, secondsToEnd={})",
@@ -664,7 +823,7 @@ public class GabagoolDirectionalEngine {
             }
 
             publishOrderEvent(new OrderLifecycleEvent(
-                    "gabagool-directional", runId, "PLACE", PlaceReason.TOP_UP.name(),
+                    "gabagool-directional", runId, "PLACE", placeReason == null ? PlaceReason.TOP_UP.name() : placeReason.name(),
                     market.slug(), market.marketType(), tokenId, direction.name(),
                     secondsToEnd, null, orderId != null, orderId == null ? "orderId null" : null,
                     orderId, bestAsk, topUpShares, null, null, null, null, null,
@@ -673,7 +832,7 @@ public class GabagoolDirectionalEngine {
         } catch (Exception e) {
             log.error("GABAGOOL: Failed to top-up {} on {}: {}", direction, market.slug(), e.getMessage());
             publishOrderEvent(new OrderLifecycleEvent(
-                    "gabagool-directional", runId, "PLACE", PlaceReason.TOP_UP.name(),
+                    "gabagool-directional", runId, "PLACE", placeReason == null ? PlaceReason.TOP_UP.name() : placeReason.name(),
                     market.slug(), market.marketType(), tokenId, direction.name(),
                     secondsToEnd, null, false, truncateError(e),
                     null, bestAsk, topUpShares, null, null, null, null, null,
@@ -907,16 +1066,11 @@ public class GabagoolDirectionalEngine {
     }
 
     private void refreshOrderStatusIfDue(String tokenId, OrderState state, Instant now) {
-        if (properties.mode() != HftProperties.TradingMode.LIVE) {
-            return;
-        }
         if (state == null || state.orderId() == null || state.orderId().isBlank()) {
             return;
         }
-        if (now == null) {
-            now = clock.instant();
-        }
-        if (state.lastStatusCheckAt() != null && Duration.between(state.lastStatusCheckAt(), now).compareTo(ORDER_STATUS_POLL_INTERVAL) < 0) {
+        Instant statusCheckAt = now == null ? clock.instant() : now;
+        if (state.lastStatusCheckAt() != null && Duration.between(state.lastStatusCheckAt(), statusCheckAt).compareTo(ORDER_STATUS_POLL_INTERVAL) < 0) {
             return;
         }
 
@@ -934,14 +1088,9 @@ public class GabagoolDirectionalEngine {
                     state.size(),
                     state.placedAt(),
                     state.matchedSize(),
-                    now,
+                    statusCheckAt,
                     state.secondsToEndAtEntry()
             ));
-            return;
-        }
-
-        String mode = order == null ? null : order.path("mode").asText(null);
-        if (mode != null && "PAPER".equalsIgnoreCase(mode)) {
             return;
         }
 
@@ -966,11 +1115,11 @@ public class GabagoolDirectionalEngine {
             if (state.market() != null && state.direction() != null) {
                 String slug = state.market().slug();
                 inventoryByMarket.compute(slug, (k, inv) -> {
-                    MarketInventory current = inv == null ? new MarketInventory(BigDecimal.ZERO, BigDecimal.ZERO) : inv;
+                    MarketInventory current = inv == null ? MarketInventory.empty() : inv;
                     if (state.direction() == Direction.UP) {
-                        return current.addUp(delta);
+                        return current.addUp(delta, statusCheckAt, state.price());
                     } else {
-                        return current.addDown(delta);
+                        return current.addDown(delta, statusCheckAt, state.price());
                     }
                 });
                 log.debug("GABAGOOL: Updated inventory for {} after fill: {} +{} shares (new inventory: {})",
@@ -992,7 +1141,7 @@ public class GabagoolDirectionalEngine {
                 state.size(),
                 state.placedAt(),
                 matched != null ? matched : prevMatched,
-                now,
+                statusCheckAt,
                 state.secondsToEndAtEntry()
         ));
     }
@@ -1189,6 +1338,12 @@ public class GabagoolDirectionalEngine {
                 cfg.completeSetTopUpEnabled(),
                 cfg.completeSetTopUpSecondsToEnd(),
                 cfg.completeSetTopUpMinShares(),
+                cfg.completeSetFastTopUpEnabled(),
+                cfg.completeSetFastTopUpMinShares(),
+                cfg.completeSetFastTopUpMinSecondsAfterFill(),
+                cfg.completeSetFastTopUpMaxSecondsAfterFill(),
+                cfg.completeSetFastTopUpCooldownMillis(),
+                cfg.completeSetFastTopUpMinEdge(),
                 // Directional bias parameters
                 cfg.directionalBiasEnabled(),
                 cfg.directionalBiasFactor(),
@@ -1276,62 +1431,56 @@ public class GabagoolDirectionalEngine {
         return shares;
     }
 
-    private static BigDecimal baseReplicaShares(GabagoolMarket market) {
+    private static BigDecimal replicaSharesByTimeToEnd(GabagoolMarket market, long secondsToEnd) {
         if (market == null || market.slug() == null) {
             return null;
         }
         String slug = market.slug();
-        // Empirical mode sizes (shares) from gabagool22 fills:
-        // - btc-updown-15m: 20
-        // - eth-updown-15m: 14
-        // - bitcoin-up-or-down: 18
-        // - ethereum-up-or-down: 14
+        // Discrete sizing by series + time-to-end bucket (medians from 2025-12-14..2025-12-19 snapshot).
+        // 15m (BTC):  <1m=11, 1-3m=13, 3-5m=17, 5-10m=19, 10-15m=20
+        // 15m (ETH):  <1m=8,  1-3m=10, 3-5m=12, 5-10m=13, 10-15m=14
+        // 1h (BTC):   <1m=9,  1-3m=10, 3-5m=11, 5-10m=12, 10-15m=14, 15-20m=15, 20-30m=17, 30-60m=18
+        // 1h (ETH):   <1m=7,  1-5m=8,  5-10m=9, 10-15m=11, 15-20m=12, 20-30m=13, 30-60m=14
+
         if (slug.startsWith("btc-updown-15m-")) {
+            if (secondsToEnd < 60) return BigDecimal.valueOf(11);
+            if (secondsToEnd < 180) return BigDecimal.valueOf(13);
+            if (secondsToEnd < 300) return BigDecimal.valueOf(17);
+            if (secondsToEnd < 600) return BigDecimal.valueOf(19);
             return BigDecimal.valueOf(20);
         }
         if (slug.startsWith("eth-updown-15m-")) {
+            if (secondsToEnd < 60) return BigDecimal.valueOf(8);
+            if (secondsToEnd < 180) return BigDecimal.valueOf(10);
+            if (secondsToEnd < 300) return BigDecimal.valueOf(12);
+            if (secondsToEnd < 600) return BigDecimal.valueOf(13);
             return BigDecimal.valueOf(14);
         }
         if (slug.startsWith("bitcoin-up-or-down-")) {
+            if (secondsToEnd < 60) return BigDecimal.valueOf(9);
+            if (secondsToEnd < 180) return BigDecimal.valueOf(10);
+            if (secondsToEnd < 300) return BigDecimal.valueOf(11);
+            if (secondsToEnd < 600) return BigDecimal.valueOf(12);
+            if (secondsToEnd < 900) return BigDecimal.valueOf(14);
+            if (secondsToEnd < 1200) return BigDecimal.valueOf(15);
+            if (secondsToEnd < 1800) return BigDecimal.valueOf(17);
             return BigDecimal.valueOf(18);
         }
         if (slug.startsWith("ethereum-up-or-down-")) {
+            if (secondsToEnd < 60) return BigDecimal.valueOf(7);
+            if (secondsToEnd < 300) return BigDecimal.valueOf(8);
+            if (secondsToEnd < 600) return BigDecimal.valueOf(9);
+            if (secondsToEnd < 900) return BigDecimal.valueOf(11);
+            if (secondsToEnd < 1200) return BigDecimal.valueOf(12);
+            if (secondsToEnd < 1800) return BigDecimal.valueOf(13);
             return BigDecimal.valueOf(14);
         }
         return null;
     }
 
-    /**
-     * Calculate size reduction factor based on time remaining to market end.
-     * Based on empirical analysis of gabagool22's sizing behavior:
-     * - Near expiry (<60s): ~45% of target size (reduces risk exposure)
-     * - 1-3 min: ~55%
-     * - 3-5 min: ~67%
-     * - 5-10 min: ~75%
-     * - >10 min: 100% (full target)
-     */
-    private static double calculateTimeToEndSizeFactor(long secondsToEnd) {
-        if (secondsToEnd < 60) {
-            // < 1 minute: 45%
-            return 0.45;
-        } else if (secondsToEnd < 180) {
-            // 1-3 minutes: 55%
-            return 0.55;
-        } else if (secondsToEnd < 300) {
-            // 3-5 minutes: 67%
-            return 0.67;
-        } else if (secondsToEnd < 600) {
-            // 5-10 minutes: 75%
-            return 0.75;
-        } else {
-            // > 10 minutes: full size
-            return 1.0;
-        }
-    }
-
     private BigDecimal calculateReplicaShares(GabagoolMarket market, BigDecimal entryPrice, GabagoolConfig cfg, long secondsToEnd) {
-        BigDecimal baseShares = baseReplicaShares(market);
-        if (baseShares == null) {
+        BigDecimal shares = replicaSharesByTimeToEnd(market, secondsToEnd);
+        if (shares == null) {
             // Fallback to existing notional-based sizing if we don't recognize the market family.
             BigDecimal notionalUsd = calculateNotionalUsd(cfg);
             return notionalUsd == null ? null : calculateSharesFromNotional(notionalUsd, entryPrice);
@@ -1340,17 +1489,6 @@ public class GabagoolDirectionalEngine {
         if (entryPrice == null || entryPrice.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }
-
-        // Apply time-to-end sizing adjustment (based on gabagool22's empirical behavior):
-        // Near expiry he trades smaller to reduce risk exposure.
-        // Empirical observations:
-        //   < 1 min to end: ~9 shares avg (45% of target)
-        //   1-3 min: ~11 shares avg (55%)
-        //   3-5 min: ~13.5 shares avg (67%)
-        //   5-10 min: ~15 shares avg (75%)
-        //   > 10 min: full target size
-        double sizeFactor = calculateTimeToEndSizeFactor(secondsToEnd);
-        BigDecimal shares = baseShares.multiply(BigDecimal.valueOf(sizeFactor));
 
         // Apply optional per-order and total exposure caps using bankroll configuration.
         BigDecimal bankrollUsd = cfg.bankrollUsd();
@@ -1510,10 +1648,6 @@ public class GabagoolDirectionalEngine {
                 return resp.get("orderId").asText();
             }
         }
-
-        if (result.mode() == HftProperties.TradingMode.PAPER) {
-            return "paper-" + UUID.randomUUID();
-        }
         return null;
     }
 
@@ -1549,6 +1683,7 @@ public class GabagoolDirectionalEngine {
         QUOTE,
         REPLACE,
         TOP_UP,  // Taker top-up for lagging leg rebalancing
+        FAST_TOP_UP,  // Fast taker top-up after a recent fill (to complete the pair)
         TAKER    // Aggressive taker order (cross the spread)
     }
 
@@ -1570,11 +1705,20 @@ public class GabagoolDirectionalEngine {
      */
     public record MarketInventory(
             BigDecimal upShares,
-            BigDecimal downShares
+            BigDecimal downShares,
+            Instant lastUpFillAt,
+            Instant lastDownFillAt,
+            BigDecimal lastUpFillPrice,
+            BigDecimal lastDownFillPrice,
+            Instant lastTopUpAt
     ) {
         public MarketInventory {
             if (upShares == null) upShares = BigDecimal.ZERO;
             if (downShares == null) downShares = BigDecimal.ZERO;
+        }
+
+        public static MarketInventory empty() {
+            return new MarketInventory(BigDecimal.ZERO, BigDecimal.ZERO, null, null, null, null, null);
         }
 
         public BigDecimal imbalance() {
@@ -1585,12 +1729,40 @@ public class GabagoolDirectionalEngine {
             return upShares.add(downShares);
         }
 
-        public MarketInventory addUp(BigDecimal shares) {
-            return new MarketInventory(upShares.add(shares), downShares);
+        public MarketInventory addUp(BigDecimal shares, Instant fillAt, BigDecimal fillPrice) {
+            return new MarketInventory(
+                    upShares.add(shares),
+                    downShares,
+                    fillAt,
+                    lastDownFillAt,
+                    fillPrice,
+                    lastDownFillPrice,
+                    lastTopUpAt
+            );
         }
 
-        public MarketInventory addDown(BigDecimal shares) {
-            return new MarketInventory(upShares, downShares.add(shares));
+        public MarketInventory addDown(BigDecimal shares, Instant fillAt, BigDecimal fillPrice) {
+            return new MarketInventory(
+                    upShares,
+                    downShares.add(shares),
+                    lastUpFillAt,
+                    fillAt,
+                    lastUpFillPrice,
+                    fillPrice,
+                    lastTopUpAt
+            );
+        }
+
+        public MarketInventory markTopUp(Instant at) {
+            return new MarketInventory(
+                    upShares,
+                    downShares,
+                    lastUpFillAt,
+                    lastDownFillAt,
+                    lastUpFillPrice,
+                    lastDownFillPrice,
+                    at
+            );
         }
     }
 
@@ -1640,6 +1812,12 @@ public class GabagoolDirectionalEngine {
             boolean completeSetTopUpEnabled,
             long completeSetTopUpSecondsToEnd,
             BigDecimal completeSetTopUpMinShares,
+            boolean completeSetFastTopUpEnabled,
+            BigDecimal completeSetFastTopUpMinShares,
+            long completeSetFastTopUpMinSecondsAfterFill,
+            long completeSetFastTopUpMaxSecondsAfterFill,
+            long completeSetFastTopUpCooldownMillis,
+            double completeSetFastTopUpMinEdge,
             // Directional bias parameters (based on gabagool22's book imbalance trading)
             boolean directionalBiasEnabled,
             double directionalBiasFactor,
@@ -1685,6 +1863,7 @@ public class GabagoolDirectionalEngine {
 
     private record PositionsCache(
             Instant fetchedAt,
+            Map<String, BigDecimal> sharesByTokenId,
             Map<String, BigDecimal> openNotionalByTokenId,
             BigDecimal openNotionalUsd
     ) {}
