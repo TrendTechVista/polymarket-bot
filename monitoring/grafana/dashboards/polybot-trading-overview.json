@@ -1,377 +1,526 @@
 {
-  "dashboard": {
-    "title": "Polybot - Trading Overview",
-    "uid": "polybot-trading",
-    "timezone": "browser",
-    "schemaVersion": 38,
-    "version": 1,
-    "refresh": "10s",
-    "time": {
-      "from": "now-6h",
-      "to": "now"
-    },
-    "panels": [
-      {
-        "id": 1,
-        "title": "📊 Realized PnL (USD)",
-        "type": "stat",
-        "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
-        "targets": [
-          {
-            "expr": "polybot_strategy_daily_realized_pnl_usd",
-            "legendFormat": "Daily PnL",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "currencyUSD",
-            "color": {
-              "mode": "thresholds"
-            },
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {"value": null, "color": "red"},
-                {"value": 0, "color": "yellow"},
-                {"value": 10, "color": "green"}
-              ]
-            }
-          }
-        },
-        "options": {
-          "graphMode": "area",
-          "colorMode": "value"
-        }
+  "title": "Polybot - Trading Overview",
+  "uid": "polybot-trading",
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "\ud83d\udcca Realized PnL (USD)",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
       },
-      {
-        "id": 2,
-        "title": "💰 Unrealized PnL (USD)",
-        "type": "stat",
-        "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
-        "targets": [
-          {
-            "expr": "polybot_strategy_unrealized_pnl_usd",
-            "legendFormat": "Unrealized PnL",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "currencyUSD",
-            "color": {
-              "mode": "thresholds"
-            },
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {"value": null, "color": "red"},
-                {"value": -50, "color": "yellow"},
-                {"value": 0, "color": "green"}
-              ]
-            }
-          }
+      "targets": [
+        {
+          "expr": "polybot_strategy_daily_realized_pnl_usd",
+          "legendFormat": "Daily PnL",
+          "refId": "A"
         }
-      },
-      {
-        "id": 3,
-        "title": "🎯 Total Exposure",
-        "type": "gauge",
-        "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
-        "targets": [
-          {
-            "expr": "polybot_strategy_total_exposure_usd / polybot_strategy_bankroll_usd * 100",
-            "legendFormat": "Exposure %",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "percent",
-            "min": 0,
-            "max": 100,
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {"value": 0, "color": "green"},
-                {"value": 15, "color": "yellow"},
-                {"value": 20, "color": "red"}
-              ]
-            }
-          }
-        },
-        "options": {
-          "showThresholdLabels": true,
-          "showThresholdMarkers": true
-        }
-      },
-      {
-        "id": 4,
-        "title": "📈 Orders per Minute",
-        "type": "stat",
-        "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
-        "targets": [
-          {
-            "expr": "rate(polybot_orders_total[1m]) * 60",
-            "legendFormat": "Orders/min",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "short",
-            "decimals": 1
-          }
-        }
-      },
-      {
-        "id": 5,
-        "title": "📊 Cumulative PnL Over Time",
-        "type": "timeseries",
-        "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
-        "targets": [
-          {
-            "expr": "polybot_strategy_cumulative_pnl_usd",
-            "legendFormat": "Cumulative PnL",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "currencyUSD",
-            "custom": {
-              "lineWidth": 2,
-              "fillOpacity": 20
-            }
-          }
-        }
-      },
-      {
-        "id": 6,
-        "title": "⚖️ Inventory Imbalance",
-        "type": "timeseries",
-        "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
-        "targets": [
-          {
-            "expr": "polybot_strategy_inventory_imbalance",
-            "legendFormat": "Imbalance (shares)",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "short",
-            "custom": {
-              "lineWidth": 2
-            }
-          }
-        },
-        "options": {
-          "legend": {
-            "displayMode": "list",
-            "placement": "bottom"
-          }
-        }
-      },
-      {
-        "id": 7,
-        "title": "📋 Order Status Breakdown",
-        "type": "piechart",
-        "gridPos": {"x": 0, "y": 12, "w": 8, "h": 8},
-        "targets": [
-          {
-            "expr": "sum(increase(polybot_orders_total{status=\"filled\"}[1h]))",
-            "legendFormat": "Filled",
-            "refId": "A"
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "thresholds"
           },
-          {
-            "expr": "sum(increase(polybot_orders_total{status=\"cancelled\"}[1h]))",
-            "legendFormat": "Cancelled",
-            "refId": "B"
-          },
-          {
-            "expr": "sum(increase(polybot_orders_total{status=\"rejected\"}[1h]))",
-            "legendFormat": "Rejected",
-            "refId": "C"
-          }
-        ],
-        "options": {
-          "legend": {
-            "displayMode": "table",
-            "placement": "right",
-            "values": ["value", "percent"]
-          }
-        }
-      },
-      {
-        "id": 8,
-        "title": "⚡ Complete-Set Edge",
-        "type": "timeseries",
-        "gridPos": {"x": 8, "y": 12, "w": 8, "h": 8},
-        "targets": [
-          {
-            "expr": "polybot_gabagool_complete_set_edge * 100",
-            "legendFormat": "Edge (%)",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "percent",
-            "custom": {
-              "lineWidth": 1,
-              "fillOpacity": 30
-            },
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {"value": 0, "color": "red"},
-                {"value": 0.9, "color": "yellow"},
-                {"value": 1.0, "color": "green"}
-              ]
-            }
-          }
-        }
-      },
-      {
-        "id": 9,
-        "title": "🎯 Active Markets",
-        "type": "stat",
-        "gridPos": {"x": 16, "y": 12, "w": 8, "h": 8},
-        "targets": [
-          {
-            "expr": "polybot_gabagool_active_markets_count",
-            "legendFormat": "Markets",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "short",
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {"value": 0, "color": "red"},
-                {"value": 1, "color": "yellow"},
-                {"value": 4, "color": "green"}
-              ]
-            }
-          }
-        }
-      },
-      {
-        "id": 10,
-        "title": "📊 Fill Rate (Last Hour)",
-        "type": "gauge",
-        "gridPos": {"x": 0, "y": 20, "w": 6, "h": 6},
-        "targets": [
-          {
-            "expr": "sum(increase(polybot_orders_filled_total[1h])) / sum(increase(polybot_orders_placed_total[1h])) * 100",
-            "legendFormat": "Fill Rate",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "percent",
-            "min": 0,
-            "max": 100,
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {"value": 0, "color": "red"},
-                {"value": 50, "color": "yellow"},
-                {"value": 70, "color": "green"}
-              ]
-            }
-          }
-        }
-      },
-      {
-        "id": 11,
-        "title": "⏱️ Average Slippage (ticks)",
-        "type": "stat",
-        "gridPos": {"x": 6, "y": 20, "w": 6, "h": 6},
-        "targets": [
-          {
-            "expr": "avg_over_time(polybot_order_slippage_ticks[1h])",
-            "legendFormat": "Slippage",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "unit": "short",
-            "decimals": 2,
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {"value": 0, "color": "green"},
-                {"value": 2, "color": "yellow"},
-                {"value": 5, "color": "red"}
-              ]
-            }
-          }
-        }
-      },
-      {
-        "id": 12,
-        "title": "🌐 WebSocket Status",
-        "type": "stat",
-        "gridPos": {"x": 12, "y": 20, "w": 6, "h": 6},
-        "targets": [
-          {
-            "expr": "polybot_websocket_connected{type=\"market\"}",
-            "legendFormat": "Connected",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "mappings": [
-              {"type": "value", "value": "0", "text": "Disconnected", "color": "red"},
-              {"type": "value", "value": "1", "text": "Connected", "color": "green"}
-            ],
-            "noValue": "Unknown"
-          }
-        }
-      },
-      {
-        "id": 13,
-        "title": "💻 Service Health",
-        "type": "stat",
-        "gridPos": {"x": 18, "y": 20, "w": 6, "h": 6},
-        "targets": [
-          {
-            "expr": "up{job=~\".*-service\"}",
-            "legendFormat": "{{job}}",
-            "refId": "A"
-          }
-        ],
-        "fieldConfig": {
-          "defaults": {
-            "mappings": [
-              {"type": "value", "value": "0", "text": "Down", "color": "red"},
-              {"type": "value", "value": "1", "text": "Up", "color": "green"}
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0,
+                "color": "yellow"
+              },
+              {
+                "value": 10,
+                "color": "green"
+              }
             ]
           }
-        },
-        "options": {
-          "orientation": "horizontal"
+        }
+      },
+      "options": {
+        "graphMode": "area",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 2,
+      "title": "\ud83d\udcb0 Unrealized PnL (USD)",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "polybot_strategy_unrealized_pnl_usd",
+          "legendFormat": "Unrealized PnL",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": -50,
+                "color": "yellow"
+              },
+              {
+                "value": 0,
+                "color": "green"
+              }
+            ]
+          }
         }
       }
-    ],
-    "annotations": {
-      "list": [
+    },
+    {
+      "id": 3,
+      "title": "\ud83c\udfaf Total Exposure",
+      "type": "gauge",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
         {
-          "name": "Alerts",
-          "datasource": "Prometheus",
-          "enable": true,
-          "expr": "ALERTS{alertstate=\"firing\"}",
-          "iconColor": "red",
-          "tagKeys": "alertname,severity"
+          "expr": "polybot_strategy_total_exposure_usd / polybot_strategy_bankroll_usd * 100",
+          "legendFormat": "Exposure %",
+          "refId": "A"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 15,
+                "color": "yellow"
+              },
+              {
+                "value": 20,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 4,
+      "title": "\ud83d\udcc8 Orders per Minute",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "rate(polybot_orders_total[1m]) * 60",
+          "legendFormat": "Orders/min",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "\ud83d\udcca Cumulative PnL Over Time",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "polybot_strategy_cumulative_pnl_usd",
+          "legendFormat": "Cumulative PnL",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "\u2696\ufe0f Inventory Imbalance",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "polybot_strategy_inventory_imbalance",
+          "legendFormat": "Imbalance (shares)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "\ud83d\udccb Order Status Breakdown",
+      "type": "piechart",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(polybot_orders_total{status=\"filled\"}[1h]))",
+          "legendFormat": "Filled",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(increase(polybot_orders_total{status=\"cancelled\"}[1h]))",
+          "legendFormat": "Cancelled",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(increase(polybot_orders_total{status=\"rejected\"}[1h]))",
+          "legendFormat": "Rejected",
+          "refId": "C"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "\u26a1 Complete-Set Edge",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 8,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "polybot_gabagool_complete_set_edge * 100",
+          "legendFormat": "Edge (%)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 30
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 0.9,
+                "color": "yellow"
+              },
+              {
+                "value": 1.0,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "\ud83c\udfaf Active Markets",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "polybot_gabagool_active_markets_count",
+          "legendFormat": "Markets",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "yellow"
+              },
+              {
+                "value": 4,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "\ud83d\udcca Fill Rate (Last Hour)",
+      "type": "gauge",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(polybot_orders_filled_total[1h])) / sum(increase(polybot_orders_placed_total[1h])) * 100",
+          "legendFormat": "Fill Rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 50,
+                "color": "yellow"
+              },
+              {
+                "value": 70,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "\u23f1\ufe0f Average Slippage (ticks)",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 20,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "avg_over_time(polybot_order_slippage_ticks[1h])",
+          "legendFormat": "Slippage",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 2,
+                "color": "yellow"
+              },
+              {
+                "value": 5,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "\ud83c\udf10 WebSocket Status",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "polybot_websocket_connected{type=\"market\"}",
+          "legendFormat": "Connected",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "value": "0",
+              "text": "Disconnected",
+              "color": "red"
+            },
+            {
+              "type": "value",
+              "value": "1",
+              "text": "Connected",
+              "color": "green"
+            }
+          ],
+          "noValue": "Unknown"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "\ud83d\udcbb Service Health",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 20,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "up{job=~\".*-service\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "value": "0",
+              "text": "Down",
+              "color": "red"
+            },
+            {
+              "type": "value",
+              "value": "1",
+              "text": "Up",
+              "color": "green"
+            }
+          ]
+        }
+      },
+      "options": {
+        "orientation": "horizontal"
+      }
     }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "Alerts",
+        "datasource": "Prometheus",
+        "enable": true,
+        "expr": "ALERTS{alertstate=\"firing\"}",
+        "iconColor": "red",
+        "tagKeys": "alertname,severity"
+      }
+    ]
   }
 }

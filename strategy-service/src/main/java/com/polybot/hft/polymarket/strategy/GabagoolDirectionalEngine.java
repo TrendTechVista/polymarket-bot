@@ -12,6 +12,7 @@ import com.polybot.hft.polymarket.ws.TopOfBook;
 import com.polybot.hft.events.HftEventPublisher;
 import com.polybot.hft.events.HftEventTypes;
 import com.polybot.hft.strategy.executor.ExecutorApiClient;
+import com.polybot.hft.strategy.metrics.StrategyMetricsService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.NonNull;
@@ -56,6 +57,7 @@ public class GabagoolDirectionalEngine {
     private final @NonNull HftEventPublisher events;
     private final @NonNull GabagoolMarketDiscovery marketDiscovery;
     private final @NonNull Clock clock;
+    private final @NonNull StrategyMetricsService metricsService;
 
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "gabagool-directional");
@@ -1273,6 +1275,13 @@ public class GabagoolDirectionalEngine {
 
             activeMarkets.set(markets);
 
+            // Update metrics
+            metricsService.updateActiveMarketsCount(markets.size());
+            GabagoolConfig metricsConfig = getConfig();
+            if (metricsConfig.bankrollUsd() != null) {
+                metricsService.updateBankroll(metricsConfig.bankrollUsd());
+            }
+
             // Ensure the market WS is subscribed to the active token ids.
             List<String> assetIds = markets.stream()
                     .flatMap(m -> Stream.of(m.upTokenId(), m.downTokenId()))
@@ -1584,7 +1593,12 @@ public class GabagoolDirectionalEngine {
         if (fillsNotional == null) {
             fillsNotional = BigDecimal.ZERO;
         }
-        return total.add(positionsNotional).add(fillsNotional);
+        BigDecimal totalExposure = total.add(positionsNotional).add(fillsNotional);
+
+        // Update metrics
+        metricsService.updateTotalExposure(totalExposure);
+
+        return totalExposure;
     }
 
     private void safeCancel(OrderState state, CancelReason reason, Long secondsToEndNow, TopOfBook book, TopOfBook otherBook) {

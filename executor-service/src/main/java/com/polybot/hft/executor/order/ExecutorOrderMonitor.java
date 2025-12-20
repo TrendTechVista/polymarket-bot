@@ -7,6 +7,7 @@ import com.polybot.hft.domain.OrderSide;
 import com.polybot.hft.events.HftEventPublisher;
 import com.polybot.hft.events.HftEventTypes;
 import com.polybot.hft.executor.events.ExecutorOrderStatusEvent;
+import com.polybot.hft.executor.metrics.ExecutorMetricsService;
 import com.polybot.hft.polymarket.service.PolymarketTradingService;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +37,7 @@ public class ExecutorOrderMonitor {
   private final @NonNull HftEventPublisher events;
   private final @NonNull ObjectMapper objectMapper;
   private final @NonNull Clock clock;
+  private final @NonNull ExecutorMetricsService metricsService;
 
   private final Map<String, TrackedOrder> trackedByOrderId = new ConcurrentHashMap<>();
 
@@ -143,7 +145,9 @@ public class ExecutorOrderMonitor {
     TrackedOrder updated = tracked.withLast(status, matched, remaining);
     trackedByOrderId.put(tracked.orderId(), updated);
 
+    // Record metrics for terminal states
     if (isTerminal(status, matched, remaining, tracked.requestedSize())) {
+      recordTerminalMetrics(status, matched, tracked.requestedSize());
       trackedByOrderId.remove(tracked.orderId());
     }
   }
@@ -242,6 +246,32 @@ public class ExecutorOrderMonitor {
       return json.substring(0, ORDER_JSON_MAX_LEN) + "...";
     } catch (Exception e) {
       return null;
+    }
+  }
+
+  /**
+   * Record metrics when an order reaches a terminal state.
+   */
+  private void recordTerminalMetrics(String status, BigDecimal matched, BigDecimal requestedSize) {
+    if (status == null) {
+      return;
+    }
+    String normalized = status.trim().toUpperCase();
+
+    // Check if fully filled
+    if (normalized.contains("FILLED") || normalized.contains("DONE")) {
+      boolean fullyFilled = matched != null && requestedSize != null && matched.compareTo(requestedSize) >= 0;
+      if (fullyFilled || normalized.contains("FILLED")) {
+        metricsService.recordOrderFilled(null); // slippage tracking can be added later
+      }
+    }
+    // Check if cancelled
+    else if (normalized.contains("CANCEL")) {
+      metricsService.recordOrderCancelled();
+    }
+    // Check if rejected
+    else if (normalized.contains("REJECT") || normalized.contains("FAILED")) {
+      metricsService.recordOrderRejected();
     }
   }
 

@@ -85,18 +85,30 @@ python3 calibrate_maker_fill_model.py --hours 24
 python3 calibrate_maker_fill_model.py --hours 24 --run-id <your-run-id>
 ```
 
+### Strict sim-trade match (paper vs gabagool22)
+
+This compares *trade prints* for gabagool22 vs our paper bot (default `polybot-sim`) in the same window.
+
+```bash
+cd research
+python3 sim_trade_match_report.py --hours 6
+python3 sim_trade_match_report.py --hours 24 --sim-username polybot-sim
+```
+
 ## Connection defaults
 
-The notebooks default to:
+The scripts/notebooks default to:
 
-- ClickHouse HTTP: `http://127.0.0.1:8123`
+- ClickHouse HTTP: `http://127.0.0.1:8123` (or `CLICKHOUSE_URL`)
 - Database: `polybot`
 - User: `intellij` (no password; granted SELECT in ClickHouse init)
 
 Override via env vars:
 
-- `CLICKHOUSE_HOST` (default `127.0.0.1`)
-- `CLICKHOUSE_PORT` (default `8123`)
+- `CLICKHOUSE_URL` (preferred, e.g. `http://127.0.0.1:8123`)
+- `CLICKHOUSE_HOST` (fallback when `CLICKHOUSE_URL` not set; default `127.0.0.1`)
+- `CLICKHOUSE_PORT` (fallback when `CLICKHOUSE_URL` not set; default `8123`)
 - `CLICKHOUSE_DATABASE` (default `polybot`)
 - `CLICKHOUSE_USER` (default `intellij`)
 - `CLICKHOUSE_PASSWORD` (default empty)
+- `CLICKHOUSE_TIMEOUT_SECONDS` (default `30`)

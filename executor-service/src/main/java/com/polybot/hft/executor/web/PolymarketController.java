@@ -9,6 +9,7 @@ import com.polybot.hft.executor.events.ExecutorCancelOrderEvent;
 import com.polybot.hft.executor.events.ExecutorLimitOrderEvent;
 import com.polybot.hft.executor.events.ExecutorMarketOrderEvent;
 import com.polybot.hft.executor.events.ExecutorOrderError;
+import com.polybot.hft.executor.metrics.ExecutorMetricsService;
 import com.polybot.hft.executor.order.ExecutorOrderMonitor;
 import com.polybot.hft.executor.sim.PaperExchangeSimulator;
 import com.polybot.hft.polymarket.api.PolymarketAccountResponse;
@@ -56,6 +57,7 @@ public class PolymarketController {
   private final @NonNull ExecutorOrderMonitor orderMonitor;
   private final @NonNull PaperExchangeSimulator simulator;
   private final @NonNull ObjectMapper objectMapper;
+  private final @NonNull ExecutorMetricsService metricsService;
 
   private static String normalizeAddress(String address) {
     if (address == null) {
@@ -153,6 +155,7 @@ public class PolymarketController {
     log.info("api /orders/limit tokenId={} side={} price={} size={} orderType={}",
         request.tokenId(), request.side(), request.price(), request.size(), request.orderType());
     try {
+      metricsService.recordOrderPlaced();
       OrderSubmissionResult result = simulator.enabled()
           ? simulator.placeLimitOrder(request)
           : tradingService.placeLimitOrder(request);
@@ -173,6 +176,7 @@ public class PolymarketController {
     log.info("api /orders/market tokenId={} side={} amount={} price={} orderType={}",
         request.tokenId(), request.side(), request.amount(), request.price(), request.orderType());
     try {
+      metricsService.recordOrderPlaced();
       OrderSubmissionResult result = simulator.enabled()
           ? simulator.placeMarketOrder(request)
           : tradingService.placeMarketOrder(request);

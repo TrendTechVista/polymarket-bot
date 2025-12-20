@@ -35,6 +35,7 @@ stop_service() {
 }
 
 # Stop services in reverse order
+stop_service "analytics-service"
 stop_service "ingestor-service"
 stop_service "strategy-service"
 stop_service "executor-service"

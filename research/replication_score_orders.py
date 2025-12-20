@@ -94,9 +94,13 @@ class ClickHouseHttp:
 
 
 def _get_client() -> ClickHouseHttp:
-    url = os.getenv("CLICKHOUSE_URL", "http://localhost:8123")
+    url = os.getenv("CLICKHOUSE_URL")
+    if not url:
+        host = os.getenv("CLICKHOUSE_HOST", "127.0.0.1")
+        port = os.getenv("CLICKHOUSE_PORT", "8123")
+        url = f"http://{host}:{port}"
     database = os.getenv("CLICKHOUSE_DATABASE", "polybot")
-    user = os.getenv("CLICKHOUSE_USER", "default")
+    user = os.getenv("CLICKHOUSE_USER", "intellij")
     password = os.getenv("CLICKHOUSE_PASSWORD", "")
     timeout_s = int(os.getenv("CLICKHOUSE_TIMEOUT_SECONDS", "30"))
     return ClickHouseHttp(url=url, database=database, user=user, password=password, timeout_seconds=timeout_s)
@@ -382,13 +386,13 @@ def main() -> int:
     l1_replace = 2.0 * abs(bot_replace_rate - gab_reprice_proxy) if np.isfinite(bot_replace_rate) and np.isfinite(gab_reprice_proxy) else float("nan")
 
     # -----------------------------------------------------------------------------
-    # 3) Top-up latency: baseline lead→lag nearest-opposite delays vs our top-up placements after fills
+    # 3) Lead→lag fill latency (paired UP/DOWN execution timing)
+    #
+    # Baseline: gabagool trade prints (condition_id groups).
+    # Bot: our filled orders (market_slug groups) using first_fill_ts per order.
     # -----------------------------------------------------------------------------
     gab_abs, gab_signed = _compute_fill_pair_metrics(gab, condition_col="condition_id", outcome_col="outcome", ts_col="ts")
     gab_lead_to_lag = gab_signed[gab_signed > 0]
-
-    topup_place = place[place["reason"].isin(["FAST_TOP_UP", "TOP_UP"])].copy()
-    topup_place["ts"] = pd.to_datetime(topup_place["ts"], utc=True)
 
     # Map order_id -> market_slug/direction for fills.
     oid_map = orders[(orders["order_id"] != "") & (orders["order_id"].notna())][["order_id", "market_slug", "direction", "series"]].copy()
@@ -396,36 +400,18 @@ def main() -> int:
     fills = fills.merge(oid_map, left_on="order_id", right_on="order_id", how="inner")
     fills["first_fill_ts"] = pd.to_datetime(fills["first_fill_ts"], utc=True)
 
-    # For each fill on one direction, find earliest subsequent top-up placement on opposite direction in same market.
-    topup_lat_s: list[float] = []
-    if not fills.empty and not topup_place.empty:
-        by_market_dir = {
-            (m, d): g.sort_values("ts")["ts"].to_numpy(dtype="datetime64[ns]")
-            for (m, d), g in topup_place.groupby(["market_slug", "direction"], dropna=True)
-        }
-        for _, row in fills.iterrows():
-            market = str(row["market_slug"])
-            direction = str(row["direction"])
-            fill_ts = row["first_fill_ts"]
-            if pd.isna(fill_ts) or not market or not direction:
-                continue
-            opp = "DOWN" if direction.upper() == "UP" else "UP"
-            key = (market, opp)
-            arr = by_market_dir.get(key)
-            if arr is None or arr.size == 0:
-                continue
-            j = np.searchsorted(arr, fill_ts.to_datetime64(), side="right")
-            if j >= arr.size:
-                continue
-            delta = (arr[j] - fill_ts.to_datetime64()).astype("timedelta64[ns]").astype("int64") / 1e9
-            if delta < 0:
-                continue
-            if delta <= 300:
-                topup_lat_s.append(float(delta))
+    bot_trades = fills[["market_slug", "direction", "first_fill_ts"]].copy()
+    bot_trades = bot_trades.dropna(subset=["market_slug", "direction", "first_fill_ts"])
+    bot_trades = bot_trades.rename(columns={"first_fill_ts": "ts"})
+    bot_trades["outcome"] = bot_trades["direction"].astype(str).str.upper().map({"UP": "Up", "DOWN": "Down"})
+    bot_trades = bot_trades.dropna(subset=["outcome"])
+
+    bot_abs, bot_signed = _compute_fill_pair_metrics(bot_trades, condition_col="market_slug", outcome_col="outcome", ts_col="ts")
+    bot_lead_to_lag = bot_signed[bot_signed > 0]
 
     latency_bins = [0, 2, 5, 10, 30, 60, 120]
     gab_lat = _normalize_counts(_bucketize(gab_lead_to_lag, latency_bins))
-    bot_lat = _normalize_counts(_bucketize(np.asarray(topup_lat_s, dtype="float64"), latency_bins))
+    bot_lat = _normalize_counts(_bucketize(bot_lead_to_lag, latency_bins))
     l1_latency = _l1(gab_lat, bot_lat) if gab_lat and bot_lat else float("nan")
 
     # -----------------------------------------------------------------------------
@@ -469,7 +455,7 @@ def main() -> int:
         print(f"replace rate (proxy) L1:        {l1_replace:.3f}  (bot={bot_replace_rate:.3f} vs base-proxy={gab_reprice_proxy:.3f})")
     else:
         print(f"replace rate (proxy) L1:        n/a  (bot={bot_replace_rate:.3f} vs base-proxy={gab_reprice_proxy:.3f})")
-    print(f"top-up latency (lead→lag) L1:   {l1_latency if np.isfinite(l1_latency) else float('nan'):.3f}  (n={len(topup_lat_s):,} bot top-ups)")
+    print(f"lead→lag fill latency L1:       {l1_latency if np.isfinite(l1_latency) else float('nan'):.3f}  (n={len(bot_lead_to_lag):,} bot paired fills)")
     print(f"imbalance frac (condition) L1:  {l1_imb if np.isfinite(l1_imb) else float('nan'):.3f}  (n={len(bot_mkt):,} bot markets)")
 
     print("\n=== DISTRIBUTIONS (baseline vs bot) ===")

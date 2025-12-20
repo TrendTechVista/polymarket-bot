@@ -95,9 +95,12 @@ def main() -> int:
     args = ap.parse_args()
 
     ch = ClickHouseHttp(
-        url=os.getenv("CLICKHOUSE_URL", "http://localhost:8123"),
+        url=(
+            os.getenv("CLICKHOUSE_URL")
+            or f"http://{os.getenv('CLICKHOUSE_HOST', '127.0.0.1')}:{os.getenv('CLICKHOUSE_PORT', '8123')}"
+        ),
         database=os.getenv("CLICKHOUSE_DATABASE", "polybot"),
-        user=os.getenv("CLICKHOUSE_USER", "default"),
+        user=os.getenv("CLICKHOUSE_USER", "intellij"),
         password=os.getenv("CLICKHOUSE_PASSWORD", ""),
         timeout_seconds=int(os.getenv("CLICKHOUSE_TIMEOUT_SECONDS", "30")),
     )
@@ -135,6 +138,7 @@ def main() -> int:
             WHERE order_id != ''
               {where_s}
             GROUP BY order_id
+            HAVING max(ifNull(matched_size, 0)) > 0
           )
         SELECT
           p.order_id,
@@ -169,6 +173,7 @@ def main() -> int:
     df["fill_latency_ms"] = pd.to_numeric(df["fill_latency_ms"], errors="coerce")
     df["ticks_above_best_bid"] = pd.to_numeric(df["ticks_above_best_bid"], errors="coerce")
     df = df.dropna(subset=["fill_latency_ms", "ticks_above_best_bid"])
+    df = df[df["fill_latency_ms"] >= 0]
     if df.empty:
         print("No usable rows after cleaning.")
         return 2
@@ -243,4 +248,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

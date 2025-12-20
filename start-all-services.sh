@@ -56,12 +56,20 @@ echo $! > logs/strategy-service.pid
 echo "   PID: $(cat logs/strategy-service.pid)"
 
 # Start ingestor service
-echo "4. Starting ingestor-service (port 8082)..."
+echo "4. Starting ingestor-service (port 8083)..."
 java -jar ingestor-service/target/ingestor-service-0.0.1-SNAPSHOT.jar \
     --spring.profiles.active=develop \
     > logs/ingestor-service.log 2>&1 &
 echo $! > logs/ingestor-service.pid
 echo "   PID: $(cat logs/ingestor-service.pid)"
+
+# Start analytics service
+echo "5. Starting analytics-service (port 8082)..."
+java -jar analytics-service/target/analytics-service-0.0.1-SNAPSHOT.jar \
+    --spring.profiles.active=develop \
+    > logs/analytics-service.log 2>&1 &
+echo $! > logs/analytics-service.pid
+echo "   PID: $(cat logs/analytics-service.pid)"
 
 echo ""
 echo "=========================================="
@@ -71,7 +79,8 @@ echo ""
 echo "Service URLs:"
 echo "  • Executor:         http://localhost:8080/actuator/health"
 echo "  • Strategy:         http://localhost:8081/actuator/health"
-echo "  • Ingestor:         http://localhost:8082/actuator/health"
+echo "  • Analytics:        http://localhost:8082/actuator/health"
+echo "  • Ingestor:         http://localhost:8083/actuator/health"
 echo "  • Infrastructure:   http://localhost:8084/actuator/health"
 echo ""
 echo "Analytics Stack:"
@@ -88,6 +97,7 @@ echo ""
 echo "Logs:"
 echo "  • tail -f logs/executor-service.log"
 echo "  • tail -f logs/strategy-service.log"
+echo "  • tail -f logs/analytics-service.log"
 echo "  • tail -f logs/ingestor-service.log"
 echo "  • tail -f logs/infrastructure-orchestrator-service.log"
 echo ""

@@ -99,6 +99,7 @@ WITH
             ) AS series,
 
             t.token_id,
+            t.token_ids,
             if(t.outcome = 'Up',
                arrayElement(t.token_ids, 2),
                arrayElement(t.token_ids, 1)

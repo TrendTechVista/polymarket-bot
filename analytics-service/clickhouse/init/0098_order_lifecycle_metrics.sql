@@ -18,6 +18,7 @@
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE VIEW polybot.order_lifecycle_by_order AS
 WITH
+  toDateTime64(0, 3) AS epoch,
   placed AS (
     SELECT
       order_id,
@@ -27,13 +28,13 @@ WITH
       anyLast(market_type) AS market_type,
       anyLast(token_id) AS token_id,
       anyLast(direction) AS direction,
-      minIf(ts, action = 'PLACE' AND success = 1) AS placed_ts,
+      nullIf(minIf(ts, action = 'PLACE' AND success = 1), epoch) AS placed_ts,
       argMinIf(price, ts, action = 'PLACE' AND success = 1) AS placed_price,
       argMinIf(size, ts, action = 'PLACE' AND success = 1) AS placed_size,
       argMinIf(tick_size, ts, action = 'PLACE' AND success = 1) AS tick_size,
       argMinIf(best_bid_price, ts, action = 'PLACE' AND success = 1) AS best_bid_price_at_place,
       argMinIf(best_ask_price, ts, action = 'PLACE' AND success = 1) AS best_ask_price_at_place,
-      minIf(ts, action = 'CANCEL' AND success = 1) AS cancel_ts,
+      nullIf(minIf(ts, action = 'CANCEL' AND success = 1), epoch) AS cancel_ts,
       countIf(action = 'REPLACE' AND success = 1) AS replace_count,
       min(ts) AS first_strategy_ts,
       max(ts) AS last_strategy_ts
@@ -44,8 +45,8 @@ WITH
   exec AS (
     SELECT
       order_id,
-      minIf(ts, matched_size > 0) AS first_fill_ts,
-      max(matched_size) AS filled_size,
+      max(ifNull(matched_size, 0)) AS filled_size,
+      if(max(ifNull(matched_size, 0)) > 0, nullIf(minIf(ts, matched_size > 0), epoch), CAST(NULL, 'Nullable(DateTime64(3))')) AS first_fill_ts,
       argMax(exchange_status, ts) AS last_exchange_status,
       argMax(requested_price, ts) AS last_requested_price,
       argMax(requested_size, ts) AS last_requested_size
@@ -100,7 +101,7 @@ SELECT
   countIf(first_fill_ts IS NULL AND cancel_ts IS NULL) AS orders_unresolved,
   round(avgIf(fill_latency_ms, fill_latency_ms IS NOT NULL) / 1000, 3) AS avg_fill_latency_s,
   round(medianIf(fill_latency_ms, fill_latency_ms IS NOT NULL) / 1000, 3) AS median_fill_latency_s,
-  round(quantileIf(0.9)(fill_latency_ms), fill_latency_ms IS NOT NULL) / 1000 AS p90_fill_latency_s,
+  round(quantileIf(0.9)(fill_latency_ms, fill_latency_ms IS NOT NULL) / 1000, 3) AS p90_fill_latency_s,
   round(avg(replace_count), 3) AS avg_replaces_per_order,
   round(sum(replace_count) / nullIf(countIf(placed_ts IS NOT NULL), 0), 3) AS replaces_per_placed_order
 FROM polybot.order_lifecycle_by_order;
@@ -119,6 +120,30 @@ WHERE fill_latency_ms IS NOT NULL
 GROUP BY fill_latency_s_bucket
 ORDER BY fill_latency_s_bucket;
 
+-- -----------------------------------------------------------------------------
+-- 3b) Cancel latency histogram (for cancel/replace cadence calibration)
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE VIEW polybot.order_cancel_latency_hist AS
+SELECT
+  floor(cancel_latency_ms / 1000) AS cancel_latency_s_bucket,
+  count() AS orders
+FROM polybot.order_lifecycle_by_order
+WHERE cancel_latency_ms IS NOT NULL
+GROUP BY cancel_latency_s_bucket
+ORDER BY cancel_latency_s_bucket;
+
+-- -----------------------------------------------------------------------------
+-- 3c) Replace-count distribution
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE VIEW polybot.order_replace_count_hist AS
+SELECT
+  replace_count,
+  count() AS orders
+FROM polybot.order_lifecycle_by_order
+WHERE placed_ts IS NOT NULL
+GROUP BY replace_count
+ORDER BY replace_count;
+
 
 -- -----------------------------------------------------------------------------
 -- 4) Tick-offset vs fill (queue priority proxy)
@@ -135,4 +160,3 @@ WHERE placed_ts IS NOT NULL
   AND ticks_above_best_bid_at_place IS NOT NULL
 GROUP BY ticks_above_best_bid_at_place
 ORDER BY ticks_above_best_bid_at_place;
-
