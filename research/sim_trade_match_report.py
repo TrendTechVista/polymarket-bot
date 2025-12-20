@@ -114,10 +114,11 @@ class ClickHouseHttp:
 
 def _pick_trade_source(ch: ClickHouseHttp) -> str:
     tables = ch.show_tables()
-    for t in ("user_trade_enriched_v4", "user_trade_enriched_v3", "user_trade_enriched_v2"):
+    # Prefer the canonical deduped trade stream (much cheaper than enriched views).
+    for t in ("user_trades_dedup", "user_trade_enriched_v4", "user_trade_enriched_v3", "user_trade_enriched_v2"):
         if t in tables:
             return t
-    raise RuntimeError("No trade source found (expected user_trade_enriched_v2/v3/v4)")
+    raise RuntimeError("No trade source found (expected user_trades_dedup or user_trade_enriched_v2/v3/v4)")
 
 
 def _fetch_user_trades(

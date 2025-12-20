@@ -275,8 +275,7 @@ Gabagool22's strategy is **market-neutral complete-set arbitrage**:
 
 ### Implementation Change
 
-The `directional-bias-enabled` config has been set to `false` in `application-develop.yaml`.
-The strategy now quotes UP and DOWN with equal base sizing, which matches gabagool22's actual behavior.
+Directional-bias logic was removed from the codebase. The strategy is strictly market-neutral: it quotes UP and DOWN with equal base sizing (adjusted only by inventory skew / top-up mechanics).
 
 ### Data Collection Recommendation
 
@@ -292,7 +291,7 @@ Only if a directional pattern persists **across all regimes** should it be consi
 1) Re-run ingestors with the new "both outcomes TOB" capture.
 2) Rebuild feature dataset to produce paired Up/Down state per decision time.
 3) Re-fit:
-   - Direction-choice model (now identifiable)
+   - Maker/taker decision + lead→lag pairing latency model
    - Execution model (fill probability vs quoted price distance to mid, by series)
 4) Only then attempt "exact match" and/or improvements (MPT + sizing).
-5) **Collect data across different market regimes** before adding any directional components.
+5) **Collect data across different market regimes** to confirm the market-neutral assumptions hold.

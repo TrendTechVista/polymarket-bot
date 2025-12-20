@@ -82,42 +82,66 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS polybot.user_trade_clean_mv
 TO polybot.user_trade_clean
 AS
 WITH
-    -- Get the other token's TOB via ASOF join
+    -- NOTE: This MV must read from an INSERTed table (not a VIEW) to auto-populate.
+    -- `user_trade_enriched_v3` is a VIEW, so a MV reading from it will not fire.
+    --
+    -- Get the other token's TOB via ASOF join (paired leg) and compute seconds_to_end
+    -- from Gamma metadata (with a slug-based fallback for 15m markets).
+    toDateTime64('2000-01-01 00:00:00', 3) AS min_valid_dt,
     trades_with_other AS (
         SELECT
-            t.ts,
-            t.username,
-            t.market_slug,
+            u.ts AS ts,
+            u.username AS username,
+            u.market_slug AS market_slug,
 
             -- Series classification
             multiIf(
-                t.market_slug LIKE 'btc-updown-15m-%', 'btc-15m',
-                t.market_slug LIKE 'eth-updown-15m-%', 'eth-15m',
-                t.market_slug LIKE 'bitcoin-up-or-down-%', 'btc-1h',
-                t.market_slug LIKE 'ethereum-up-or-down-%', 'eth-1h',
+                u.market_slug LIKE 'btc-updown-15m-%', 'btc-15m',
+                u.market_slug LIKE 'eth-updown-15m-%', 'eth-15m',
+                u.market_slug LIKE 'bitcoin-up-or-down-%', 'btc-1h',
+                u.market_slug LIKE 'ethereum-up-or-down-%', 'eth-1h',
                 'other'
             ) AS series,
 
-            t.token_id,
-            t.token_ids,
-            if(t.outcome = 'Up',
-               arrayElement(t.token_ids, 2),
-               arrayElement(t.token_ids, 1)
-            ) AS other_token_id,
-            t.outcome,
-            t.side,
-            t.price,
-            t.size,
-            t.seconds_to_end,
+            u.token_id AS token_id,
+            g.token_ids AS token_ids,
+            if(u.outcome = 'Up', g.token_ids[2], g.token_ids[1]) AS other_token_id,
+            u.outcome AS outcome,
+            u.side AS side,
+            u.price AS price,
+            u.size AS size,
 
-            -- Our side TOB (prefer WS)
-            coalesce(t.ws_best_bid_price, t.best_bid_price) AS our_best_bid,
-            coalesce(t.ws_best_bid_size, t.best_bid_size) AS our_best_bid_size,
-            coalesce(t.ws_best_ask_price, t.best_ask_price) AS our_best_ask,
-            coalesce(t.ws_best_ask_size, t.best_ask_size) AS our_best_ask_size,
-            coalesce(t.ws_mid, t.mid) AS our_mid,
-            coalesce(t.ws_tob_lag_millis,
-                     toInt64(dateDiff('millisecond', t.ts, t.tob_captured_at))) AS our_tob_lag_ms,
+            -- seconds_to_end
+            if(g.end_date < min_valid_dt, CAST(NULL, 'Nullable(DateTime64(3))'), toNullable(g.end_date)) AS gamma_end_date,
+            toUInt32OrZero(splitByChar('-', toString(u.market_slug))[-1]) AS slug_epoch_start,
+            if((position(toString(u.market_slug), 'updown-15m-') > 0) AND (slug_epoch_start > 0),
+               toDateTime64(slug_epoch_start + 900, 3),
+               CAST(NULL, 'Nullable(DateTime64(3))')
+            ) AS slug_end_date,
+            coalesce(gamma_end_date, slug_end_date) AS end_date,
+            if(end_date IS NULL, CAST(NULL, 'Nullable(Int64)'), dateDiff('second', u.ts, end_date)) AS seconds_to_end,
+
+            -- Our side TOB (prefer WS at decision time; fall back to trade-time REST snapshot)
+            if(w.ts < min_valid_dt, CAST(NULL, 'Nullable(DateTime64(3))'), toNullable(w.ts)) AS ws_ts,
+            if(ws_ts IS NULL, CAST(NULL, 'Nullable(Float64)'), nullIf(w.best_bid_price, 0)) AS ws_best_bid_price,
+            if(ws_ts IS NULL, CAST(NULL, 'Nullable(Float64)'), nullIf(w.best_bid_size, 0)) AS ws_best_bid_size,
+            if(ws_ts IS NULL, CAST(NULL, 'Nullable(Float64)'), nullIf(w.best_ask_price, 0)) AS ws_best_ask_price,
+            if(ws_ts IS NULL, CAST(NULL, 'Nullable(Float64)'), nullIf(w.best_ask_size, 0)) AS ws_best_ask_size,
+            if((ws_best_bid_price > 0) AND (ws_best_ask_price > 0),
+               (ws_best_bid_price + ws_best_ask_price) / 2,
+               CAST(NULL, 'Nullable(Float64)')
+            ) AS ws_mid,
+            coalesce(ws_best_bid_price, t.best_bid_price) AS our_best_bid,
+            coalesce(ws_best_bid_size, t.best_bid_size) AS our_best_bid_size,
+            coalesce(ws_best_ask_price, t.best_ask_price) AS our_best_ask,
+            coalesce(ws_best_ask_size, t.best_ask_size) AS our_best_ask_size,
+            coalesce(ws_mid, t.mid) AS our_mid,
+            toInt64(
+                if(ws_ts IS NULL,
+                   dateDiff('millisecond', t.tob_captured_at, u.ts),
+                   dateDiff('millisecond', ws_ts, u.ts)
+                )
+            ) AS our_tob_lag_ms,
 
             -- Other side TOB from WS
             o.best_bid_price AS other_best_bid,
@@ -125,26 +149,36 @@ WITH
             o.best_ask_price AS other_best_ask,
             o.best_ask_size AS other_best_ask_size,
             (o.best_bid_price + o.best_ask_price) / 2 AS other_mid,
-            toInt64(dateDiff('millisecond', o.ts, t.ts)) AS other_tob_lag_ms,
+            toInt64(dateDiff('millisecond', o.ts, u.ts)) AS other_tob_lag_ms,
 
-            t.is_resolved,
-            t.settle_price,
-            t.realized_pnl,
+            -- Settlement / realized PnL (0 if unresolved)
+            arrayMax(g.outcome_prices) AS max_outcome_price,
+            arrayMin(g.outcome_prices) AS min_outcome_price,
+            (max_outcome_price >= 0.999) AND (min_outcome_price <= 0.001) AS is_resolved,
+            indexOf(g.outcomes, toString(u.outcome)) AS trade_outcome_idx,
+            if(is_resolved AND (trade_outcome_idx > 0), g.outcome_prices[trade_outcome_idx], CAST(NULL, 'Nullable(Float64)')) AS settle_price,
+            if(is_resolved AND (settle_price IS NOT NULL),
+               u.size * if(u.side = 'SELL', u.price - settle_price, settle_price - u.price),
+               CAST(NULL, 'Nullable(Float64)')
+            ) AS realized_pnl,
 
-            if(t.ws_best_bid_price > 0, 'WS', 'REST') AS tob_source,
+            if(ws_best_bid_price > 0, 'WS', 'REST') AS tob_source,
 
-            t.event_key,
-            now() AS ingested_at
+            u.event_key AS event_key,
+            now64(3) AS ingested_at
 
-        FROM polybot.user_trade_enriched_v3 t
+        FROM polybot.user_trades u
+        LEFT JOIN polybot.clob_tob_by_trade_v2 t
+            ON (t.trade_key = u.event_key) AND (t.token_id = u.token_id)
+        LEFT JOIN polybot.gamma_markets_latest g
+            ON g.slug = u.market_slug
+        ASOF LEFT JOIN polybot.market_ws_tob w
+            ON (w.asset_id = u.token_id) AND (u.ts >= w.ts)
         ASOF LEFT JOIN polybot.market_ws_tob o
-            ON if(t.outcome = 'Up',
-                  arrayElement(t.token_ids, 2),
-                  arrayElement(t.token_ids, 1)
-               ) = o.asset_id
-            AND t.ts >= o.ts
-        WHERE t.username = 'gabagool22'
-          AND (t.market_slug LIKE '%updown%' OR t.market_slug LIKE '%up-or-down%')
+            ON if(u.outcome = 'Up', g.token_ids[2], g.token_ids[1]) = o.asset_id
+            AND u.ts >= o.ts
+        WHERE u.username = 'gabagool22'
+          AND (u.market_slug LIKE '%updown%' OR u.market_slug LIKE '%up-or-down%')
     )
 SELECT
     ts,

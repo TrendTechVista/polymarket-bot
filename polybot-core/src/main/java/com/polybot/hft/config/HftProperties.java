@@ -311,9 +311,6 @@ public record HftProperties(
         null,
         null,
         null,
-        null,
-        null,
-        null,
         null
     );
   }
@@ -341,13 +338,20 @@ public record HftProperties(
        * {@code bankrollUsd * quoteSizeBankrollFraction} as the base order notional instead of {@code quoteSize}.
        */
       @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double quoteSizeBankrollFraction,
-      @NotNull @PositiveOrZero Double imbalanceThreshold,
       @NotNull @Min(0) Integer improveTicks,
       /**
        * Optional bankroll (USDC) to enable fractional sizing caps.
        * When 0, bankroll-based caps are disabled.
        */
       @NotNull @PositiveOrZero BigDecimal bankrollUsd,
+      /**
+       * Optional cap for total exposure per market instance (USDC notional).
+       * This applies across BOTH legs (UP+DOWN) and includes open orders + positions for that market.
+       *
+       * Example: with maxMarketNotionalUsd=10, the strategy will size the paired quotes so that
+       * {@code shares * (price_up + price_down) <= 10} (subject to other caps).
+       *
+       * When 0, per-market cap is disabled.
       /**
        * Optional cap per order as a fraction of {@code bankrollUsd} (0..1). When 0, disabled.
        */
@@ -415,18 +419,6 @@ public record HftProperties(
        */
       @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double completeSetFastTopUpMinEdge,
       /**
-       * Enable directional bias based on order book imbalance.
-       * When enabled, quotes more aggressively on the side favored by book imbalance.
-       * Based on gabagool22's observed behavior: he tilts 5-7x toward the side with stronger book support.
-       */
-      @NotNull Boolean directionalBiasEnabled,
-      /**
-       * Multiplier for sizing on the favored side when book imbalance exceeds threshold.
-       * The unfavored side gets 1/factor (e.g., factor=1.5 means favored=1.5x, unfavored=0.67x).
-       * Gabagool22 shows ratios of 5-7x, but we start conservatively.
-       */
-      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("3.0") Double directionalBiasFactor,
-      /**
        * Enable taker mode for aggressive order placement.
        * When enabled, the strategy will sometimes cross the spread (buy at ask) instead of posting at bid.
        * Based on gabagool22's behavior: ~39% of trades are taker fills.
@@ -464,9 +456,6 @@ public record HftProperties(
       }
       if (quoteSizeBankrollFraction == null) {
         quoteSizeBankrollFraction = 0.0;
-      }
-      if (imbalanceThreshold == null) {
-        imbalanceThreshold = 0.05;
       }
       if (improveTicks == null) {
         improveTicks = 1;
@@ -516,14 +505,8 @@ public record HftProperties(
       if (completeSetFastTopUpMinEdge == null) {
         completeSetFastTopUpMinEdge = 0.0;
       }
-      if (directionalBiasEnabled == null) {
-        directionalBiasEnabled = false;  // Disabled by default for safety
-      }
-      if (directionalBiasFactor == null) {
-        directionalBiasFactor = 1.5;  // Conservative: 1.5x favored, 0.67x unfavored
-      }
       if (takerModeEnabled == null) {
-        takerModeEnabled = true;  // Enabled by default - gabagool22 takes ~39% of the time
+        takerModeEnabled = false;  // Disabled by default - gabagool22's taker fills come from FAST_TOP_UP, not explicit taker mode
       }
       if (takerModeMaxEdge == null) {
         takerModeMaxEdge = 0.015;  // Take when edge < 1.5% (low edge = fleeting opportunity)

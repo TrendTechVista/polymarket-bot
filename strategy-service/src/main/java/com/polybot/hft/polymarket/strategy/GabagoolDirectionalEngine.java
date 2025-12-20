@@ -113,9 +113,6 @@ public class GabagoolDirectionalEngine {
                 cfg.completeSetFastTopUpMaxSecondsAfterFill(),
                 cfg.completeSetFastTopUpCooldownMillis(),
                 cfg.completeSetFastTopUpMinEdge());
-        log.info("gabagool directional-bias config (enabled={}, factor={})",
-                cfg.directionalBiasEnabled(),
-                cfg.directionalBiasFactor());
         log.info("gabagool taker-mode config (enabled={}, maxEdge={}, maxSpread={})",
                 cfg.takerModeEnabled(),
                 cfg.takerModeMaxEdge(),
@@ -421,54 +418,85 @@ public class GabagoolDirectionalEngine {
             return;
         }
 
-        // ========== DIRECTIONAL BIAS (based on book imbalance) ==========
-        // Gabagool22 trades WITH the order book - buys more on the side with stronger bid support.
-        // Observed behavior: UP/DOWN ratio of 5-7x when book imbalance is significant.
-        double upSizeFactor = 1.0;
-        double downSizeFactor = 1.0;
-
-        if (cfg.directionalBiasEnabled() && cfg.directionalBiasFactor() > 1.0) {
-            // Calculate book imbalance: (upBidSize - downBidSize) / (upBidSize + downBidSize)
-            BigDecimal upBidSize = upBook.bestBidSize();
-            BigDecimal downBidSize = downBook.bestBidSize();
-
-            if (upBidSize != null && downBidSize != null
-                    && upBidSize.compareTo(BigDecimal.ZERO) > 0
-                    && downBidSize.compareTo(BigDecimal.ZERO) > 0) {
-
-                BigDecimal totalBidSize = upBidSize.add(downBidSize);
-                double bookImbalance = upBidSize.subtract(downBidSize)
-                        .divide(totalBidSize, 8, RoundingMode.HALF_UP)
-                        .doubleValue();
-
-                // If imbalance exceeds threshold, apply directional bias
-                // Positive imbalance = more UP bid support -> favor UP
-                // Negative imbalance = more DOWN bid support -> favor DOWN
-                double threshold = cfg.imbalanceThreshold();
-
-                if (Math.abs(bookImbalance) >= threshold) {
-                    double factor = cfg.directionalBiasFactor();
-                    if (bookImbalance > 0) {
-                        // Favor UP: increase UP size, decrease DOWN size
-                        upSizeFactor = factor;
-                        downSizeFactor = 1.0 / factor;
-                    } else {
-                        // Favor DOWN: increase DOWN size, decrease UP size
-                        upSizeFactor = 1.0 / factor;
-                        downSizeFactor = factor;
-                    }
-
-                    log.debug("GABAGOOL: Directional bias on {} - bookImbalance={}, upFactor={}, downFactor={}",
-                            market.slug(), String.format("%.3f", bookImbalance), String.format("%.2f", upSizeFactor), String.format("%.2f", downSizeFactor));
-                }
+        // ========== OPTIONAL TAKER MODE (one-leg) ==========
+        // Gabagool22 is often maker, but sometimes crosses the spread.
+        // Importantly, paired fills show "both legs taker" is relatively rare; usually only one leg is taker.
+        boolean shouldTake = decideTakerMode(plannedEdge, upBook, downBook, cfg);
+        if (shouldTake) {
+            Direction takeLeg = decideTakerLeg(inv, upBook, downBook, cfg);
+            if (takeLeg == Direction.UP) {
+                maybeTakeToken(market, market.upTokenId(), Direction.UP, upBook, downBook, cfg, secondsToEnd);
+                maybeQuoteTokenWithSkew(market, market.downTokenId(), Direction.DOWN, downBook, upBook, cfg, secondsToEnd, skewTicksDown);
+                return;
+            }
+            if (takeLeg == Direction.DOWN) {
+                maybeTakeToken(market, market.downTokenId(), Direction.DOWN, downBook, upBook, cfg, secondsToEnd);
+                maybeQuoteTokenWithSkew(market, market.upTokenId(), Direction.UP, upBook, downBook, cfg, secondsToEnd, skewTicksUp);
+                return;
             }
         }
 
-        // ========== MAKER MODE: Quote at bid with skew and directional bias ==========
-        // NOTE: taker-like behavior is handled via lagging-leg top-ups (FAST_TOP_UP / TOP_UP),
-        // not symmetric taker-on-both.
-        maybeQuoteTokenWithSkew(market, market.upTokenId(), Direction.UP, upBook, downBook, cfg, secondsToEnd, skewTicksUp, upSizeFactor);
-        maybeQuoteTokenWithSkew(market, market.downTokenId(), Direction.DOWN, downBook, upBook, cfg, secondsToEnd, skewTicksDown, downSizeFactor);
+        // ========== MAKER MODE: Quote at bid with skew ==========
+        maybeQuoteTokenWithSkew(market, market.upTokenId(), Direction.UP, upBook, downBook, cfg, secondsToEnd, skewTicksUp);
+        maybeQuoteTokenWithSkew(market, market.downTokenId(), Direction.DOWN, downBook, upBook, cfg, secondsToEnd, skewTicksDown);
+    }
+
+    /**
+     * Choose which leg to take (UP or DOWN) when taker mode is enabled.
+     *
+     * Heuristic:
+     * - Prefer the leg that yields a better *hedged* edge when crossing the spread on that leg:
+     *     take UP:   edge = 1 - (ask_up + bid_down)
+     *     take DOWN: edge = 1 - (bid_up + ask_down)
+     * - If both are valid and close, prefer reducing the current inventory imbalance.
+     */
+    private Direction decideTakerLeg(MarketInventory inv, TopOfBook upBook, TopOfBook downBook, GabagoolConfig cfg) {
+        if (upBook == null || downBook == null) {
+            return null;
+        }
+        BigDecimal bidUp = upBook.bestBid();
+        BigDecimal askUp = upBook.bestAsk();
+        BigDecimal bidDown = downBook.bestBid();
+        BigDecimal askDown = downBook.bestAsk();
+        if (bidUp == null || askUp == null || bidDown == null || askDown == null) {
+            return null;
+        }
+
+        BigDecimal edgeTakeUp = BigDecimal.ONE.subtract(askUp.add(bidDown));
+        BigDecimal edgeTakeDown = BigDecimal.ONE.subtract(bidUp.add(askDown));
+        BigDecimal minEdge = BigDecimal.valueOf(cfg.completeSetFastTopUpMinEdge());
+
+        boolean upOk = edgeTakeUp.compareTo(minEdge) >= 0;
+        boolean downOk = edgeTakeDown.compareTo(minEdge) >= 0;
+        if (!upOk && !downOk) {
+            return null;
+        }
+        if (upOk && !downOk) {
+            return Direction.UP;
+        }
+        if (downOk && !upOk) {
+            return Direction.DOWN;
+        }
+
+        int cmp = edgeTakeUp.compareTo(edgeTakeDown);
+        if (cmp > 0) {
+            return Direction.UP;
+        }
+        if (cmp < 0) {
+            return Direction.DOWN;
+        }
+
+        // Tie-break: reduce current imbalance if we have one.
+        if (inv != null) {
+            BigDecimal imbalance = inv.imbalance();
+            if (imbalance.compareTo(BigDecimal.ZERO) > 0) {
+                return Direction.DOWN;
+            }
+            if (imbalance.compareTo(BigDecimal.ZERO) < 0) {
+                return Direction.UP;
+            }
+        }
+        return Direction.UP;
     }
 
     private void maybeFastTopUpLaggingLeg(GabagoolMarket market,
@@ -586,7 +614,7 @@ public class GabagoolDirectionalEngine {
      */
     private void maybeTakeToken(GabagoolMarket market, String tokenId, Direction direction,
                                  TopOfBook book, TopOfBook otherBook, GabagoolConfig cfg,
-                                 long secondsToEnd, double sizeFactor) {
+                                 long secondsToEnd) {
         if (tokenId == null || tokenId.isBlank() || book == null) {
             return;
         }
@@ -599,14 +627,6 @@ public class GabagoolDirectionalEngine {
         BigDecimal shares = calculateReplicaShares(market, bestAsk, cfg, secondsToEnd);
         if (shares == null) {
             return;
-        }
-
-        // Apply directional bias factor to sizing
-        if (sizeFactor != 1.0 && sizeFactor > 0) {
-            shares = shares.multiply(BigDecimal.valueOf(sizeFactor)).setScale(2, RoundingMode.DOWN);
-            if (shares.compareTo(BigDecimal.valueOf(0.01)) < 0) {
-                return;
-            }
         }
 
         // Don't place if we already have an open order on this token
@@ -669,11 +689,10 @@ public class GabagoolDirectionalEngine {
      * Replica-style quoting with inventory skew: place/maintain a single maker-like BUY order per token.
      *
      * @param skewTicks Positive = improve quote (bid higher), Negative = penalize quote (bid lower)
-     * @param sizeFactor Directional bias multiplier (e.g., 1.5 for favored side, 0.67 for unfavored)
      */
     private void maybeQuoteTokenWithSkew(GabagoolMarket market, String tokenId, Direction direction,
                                           TopOfBook book, TopOfBook otherBook, GabagoolConfig cfg,
-                                          long secondsToEnd, int skewTicks, double sizeFactor) {
+                                          long secondsToEnd, int skewTicks) {
         if (tokenId == null || tokenId.isBlank() || book == null) {
             return;
         }
@@ -691,14 +710,6 @@ public class GabagoolDirectionalEngine {
         BigDecimal shares = calculateReplicaShares(market, entryPrice, cfg, secondsToEnd);
         if (shares == null) {
             return;
-        }
-
-        // Apply directional bias factor to sizing
-        if (sizeFactor != 1.0 && sizeFactor > 0) {
-            shares = shares.multiply(BigDecimal.valueOf(sizeFactor)).setScale(2, RoundingMode.DOWN);
-            if (shares.compareTo(BigDecimal.valueOf(0.01)) < 0) {
-                return;  // Too small after applying bias
-            }
         }
 
         OrderState existing = ordersByTokenId.get(tokenId);
@@ -1335,7 +1346,6 @@ public class GabagoolDirectionalEngine {
                 cfg.maxSecondsToEnd(),
                 cfg.quoteSize(),
                 cfg.quoteSizeBankrollFraction(),
-                cfg.imbalanceThreshold(),
                 cfg.improveTicks(),
                 cfg.bankrollUsd(),
                 cfg.maxOrderBankrollFraction(),
@@ -1353,44 +1363,12 @@ public class GabagoolDirectionalEngine {
                 cfg.completeSetFastTopUpMaxSecondsAfterFill(),
                 cfg.completeSetFastTopUpCooldownMillis(),
                 cfg.completeSetFastTopUpMinEdge(),
-                // Directional bias parameters
-                cfg.directionalBiasEnabled(),
-                cfg.directionalBiasFactor(),
                 // Taker mode parameters
                 cfg.takerModeEnabled(),
                 cfg.takerModeMaxEdge(),
                 cfg.takerModeMaxSpread(),
                 marketConfigs
         );
-    }
-
-    private BigDecimal calculateMid(TopOfBook book) {
-        if (book == null || book.bestBid() == null || book.bestAsk() == null) {
-            return null;
-        }
-        return book.bestBid().add(book.bestAsk()).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
-    }
-
-    private Double calculateImbalance(TopOfBook book) {
-        if (book == null || book.bestBid() == null || book.bestAsk() == null) {
-            return null;
-        }
-
-        BigDecimal bidSize = book.bestBidSize();
-        BigDecimal askSize = book.bestAskSize();
-        if (bidSize != null && askSize != null) {
-            BigDecimal total = bidSize.add(askSize);
-            if (total.signum() == 0) {
-                return 0.0;
-            }
-            return bidSize.subtract(askSize)
-                    .divide(total, 8, RoundingMode.HALF_UP)
-                    .doubleValue();
-        }
-
-        // Fallback proxy (if the WS event doesn't include sizes).
-        BigDecimal mid = book.bestBid().add(book.bestAsk()).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
-        return mid.subtract(BigDecimal.valueOf(0.5)).doubleValue() * 2;
     }
 
     private BigDecimal getTickSize(String tokenId) {
@@ -1814,7 +1792,6 @@ public class GabagoolDirectionalEngine {
             long maxSecondsToEnd,
             BigDecimal quoteSize,
             double quoteSizeBankrollFraction,
-            double imbalanceThreshold,
             int improveTicks,
             BigDecimal bankrollUsd,
             double maxOrderBankrollFraction,
@@ -1832,9 +1809,6 @@ public class GabagoolDirectionalEngine {
             long completeSetFastTopUpMaxSecondsAfterFill,
             long completeSetFastTopUpCooldownMillis,
             double completeSetFastTopUpMinEdge,
-            // Directional bias parameters (based on gabagool22's book imbalance trading)
-            boolean directionalBiasEnabled,
-            double directionalBiasFactor,
             // Taker mode parameters (gabagool22 takes ~39% of the time)
             boolean takerModeEnabled,
             double takerModeMaxEdge,

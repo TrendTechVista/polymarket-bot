@@ -25,7 +25,7 @@ executor:
     proxy-address: sim
     fills-enabled: true
     fill-poll-millis: 250
-    maker-fill-probability-per-poll: 0.03
-    maker-fill-probability-multiplier-per-tick: 1.0
-    maker-fill-probability-max-per-poll: 0.5
+    maker-fill-probability-per-poll: 0.01
+    maker-fill-probability-multiplier-per-tick: 1.3
+    maker-fill-probability-max-per-poll: 0.05
     maker-fill-fraction-of-remaining: 0.25

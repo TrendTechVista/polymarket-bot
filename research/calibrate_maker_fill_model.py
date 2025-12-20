@@ -114,7 +114,6 @@ def main() -> int:
           placed AS (
             SELECT
               order_id,
-              anyLast(run_id) AS run_id,
               anyLast(token_id) AS token_id,
               minIf(ts, action = 'PLACE' AND success = 1) AS placed_ts,
               argMinIf(price, ts, action = 'PLACE' AND success = 1) AS placed_price,

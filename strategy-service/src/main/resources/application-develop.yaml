@@ -30,13 +30,12 @@ hft:
     # ============================================================================
     gabagool:
       enabled: true
-      refresh-millis: 250
-      min-replace-millis: 1000   # minimum cancel/replace cadence per tokenId
+      refresh-millis: 500
+      min-replace-millis: 5000   # minimum cancel/replace cadence per tokenId
       min-seconds-to-end: 0      # trade window start (seconds to market end)
       max-seconds-to-end: 3600   # trade window end (caps 1h; 15m is capped to 900 in code)
       quote-size: 10             # USDC notional per order (approx. entryPrice * shares)
       quote-size-bankroll-fraction: 0.0
-      imbalance-threshold: 0.05  # Min book imbalance to trigger signal
       improve-ticks: 0           # Place AT best bid (true maker, matches gabagool22)
       # Optional bankroll-aware caps (set bankroll-usd > 0 to enable)
       bankroll-usd: 0
@@ -50,32 +49,20 @@ hft:
       # The edge is: 1.0 - (bid_up + bid_down), typically 0.01-0.02 when WS TOB is fresh
       # ============================================================================
       complete-set-min-edge: 0.01           # Min complete-set edge to quote (1 - bid_up - bid_down)
-      complete-set-max-skew-ticks: 2        # Max inventory skew (ticks) applied to quotes
-      complete-set-imbalance-shares-for-max-skew: 40  # Share imbalance at which max skew is applied
+      complete-set-max-skew-ticks: 1        # Reduce hedging aggressiveness (helps match gab imbalance distribution)
+      complete-set-imbalance-shares-for-max-skew: 200  # Allow moderate imbalance before max skew kicks in
       complete-set-top-up-enabled: true     # Cross spread on lagging leg near market end
       complete-set-top-up-seconds-to-end: 60  # Only top-up when <= N seconds to end
-      complete-set-top-up-min-shares: 0.01  # Min imbalance shares to trigger top-up
+      complete-set-top-up-min-shares: 10    # Only top-up when imbalance is meaningful
       complete-set-fast-top-up-enabled: true
-      complete-set-fast-top-up-min-shares: 0.01
-      complete-set-fast-top-up-min-seconds-after-fill: 2
+      complete-set-fast-top-up-min-shares: 10
+      complete-set-fast-top-up-min-seconds-after-fill: 3
       complete-set-fast-top-up-max-seconds-after-fill: 120
-      complete-set-fast-top-up-cooldown-millis: 5000
-      complete-set-fast-top-up-min-edge: 0.0
+      complete-set-fast-top-up-cooldown-millis: 15000
+      complete-set-fast-top-up-min-edge: 0.01
 
       # ============================================================================
-      # DIRECTIONAL BIAS (DISABLED - market-neutral approach)
-      # ============================================================================
-      # IMPORTANT: Initial research showed DOWN bias was profitable, but this was
-      # sample-period dependent (BTC dropped ~5% during Dec 14-18 observation).
-      # Gabagool22's actual strategy is MARKET-NEUTRAL complete-set arbitrage.
-      # The edge comes from pricing inefficiencies, NOT from predicting direction.
-      # Keep disabled until we have data across both up AND down market regimes.
-      # ============================================================================
-      directional-bias-enabled: false       # DISABLED - strategy is market-neutral
-      directional-bias-factor: 1.5          # (unused when disabled)
-
-      # ============================================================================
-      # TAKER MODE (DISABLED - prefer maker + lagging-leg top-up)
+      # TAKER MODE (one-leg taker + other-leg maker)
       # ============================================================================
       taker-mode-enabled: false
       taker-mode-max-edge: 0.015

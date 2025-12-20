@@ -20,6 +20,10 @@ hs_err_pid*
 
 # Local config / secrets
 .env
+config/*.yaml
+config/*.yml
+!config/*.example.yaml
+!config/*.example.yml
 
 # Python
 __pycache__/

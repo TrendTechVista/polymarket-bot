@@ -100,11 +100,6 @@ class StrategyConfig:
 
         return 15.0
 
-    # Directional bias (disabled - market neutral)
-    directional_bias_enabled: bool = False
-    directional_bias_factor: float = 1.5
-
-
 @dataclass
 class TopOfBook:
     """Book state for one token"""
@@ -753,7 +748,6 @@ def main():
         min_seconds_to_end=0,
         max_seconds_to_end=3600,
         improve_ticks=0,  # AT best bid
-        directional_bias_enabled=False,  # Market neutral
     )
 
     backtester = Backtester(config)

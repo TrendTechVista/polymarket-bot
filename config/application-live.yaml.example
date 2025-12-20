@@ -1,0 +1,36 @@
+# Copy to `config/application-live.yaml` (gitignored) to run LIVE without env vars.
+#
+# Used by services started with `--spring.profiles.active=live`, e.g.:
+# - `./start-all-services-live.sh`
+#
+# IMPORTANT: this file contains secrets when you fill it. Do NOT commit it.
+
+hft:
+  # Enable strategy + LIVE_ACK header once you're ready to trade.
+  strategy:
+    gabagool:
+      enabled: true
+      bankroll-usd: 200
+      max-order-bankroll-fraction: 0.05    # ~$10/order
+      max-total-bankroll-fraction: 0.50    # ~$100 total exposure
+
+  executor:
+    send-live-ack: true
+
+  risk:
+    kill-switch: false
+    max-order-notional-usd: 10
+
+  polymarket:
+    auth:
+      # Required
+      private-key: "0xREPLACE_ME"
+
+      # Option A (recommended): auto create/derive API creds at startup
+      auto-create-or-derive-api-creds: true
+      nonce: 0
+
+      # Option B: paste API creds (set auto-create-or-derive-api-creds=false)
+      api-key: ""
+      api-secret: ""
+      api-passphrase: ""

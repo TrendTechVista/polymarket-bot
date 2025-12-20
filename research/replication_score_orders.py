@@ -243,7 +243,20 @@ def fetch_strategy_orders(client, run_id: Optional[str], where_time: str) -> pd.
     return client.query_df(q)
 
 
-def fetch_filled_orders(client, where_time: str) -> pd.DataFrame:
+def fetch_filled_orders(client, where_time: str, run_id: Optional[str]) -> pd.DataFrame:
+    run_filter = ""
+    if run_id:
+        # Restrict status scan to orders we actually placed in this run/window.
+        # This keeps ClickHouse queries fast even when executor_order_status is large.
+        run_filter = f"""
+          AND order_id IN (
+            SELECT DISTINCT order_id
+            FROM polybot.strategy_gabagool_orders
+            WHERE order_id != ''
+              AND run_id = '{run_id}'
+              {where_time}
+          )
+        """
     q = f"""
     SELECT
       order_id,
@@ -254,6 +267,7 @@ def fetch_filled_orders(client, where_time: str) -> pd.DataFrame:
     FROM polybot.executor_order_status
     WHERE order_id != ''
       {where_time}
+      {run_filter}
     GROUP BY order_id
     HAVING filled_size > 0
     """
@@ -352,7 +366,7 @@ def main() -> int:
     try:
         gab = fetch_gabagool_trades(client, trade_source, args.baseline_username, where_trades)
         orders = fetch_strategy_orders(client, args.run_id, where_orders)
-        fills = fetch_filled_orders(client, where_status)
+        fills = fetch_filled_orders(client, where_status, args.run_id)
     except Exception as e:
         print(f"ClickHouse query failed: {e}", file=sys.stderr)
         return 2

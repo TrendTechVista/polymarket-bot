@@ -12,13 +12,14 @@ import com.polybot.hft.executor.events.ExecutorOrderStatusEvent;
 import com.polybot.hft.polymarket.api.LimitOrderRequest;
 import com.polybot.hft.polymarket.api.MarketOrderRequest;
 import com.polybot.hft.polymarket.api.OrderSubmissionResult;
-import com.polybot.hft.polymarket.clob.PolymarketClobClient;
 import com.polybot.hft.polymarket.data.PolymarketPosition;
+import com.polybot.hft.polymarket.gamma.PolymarketGammaClient;
 import com.polybot.hft.polymarket.ws.ClobMarketWebSocketClient;
 import com.polybot.hft.polymarket.ws.TopOfBook;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PostConstruct;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -59,11 +60,28 @@ public class PaperExchangeSimulator {
   private final @NonNull Clock clock;
   private final @NonNull HftEventPublisher events;
   private final @NonNull ClobMarketWebSocketClient marketWs;
-  private final @NonNull PolymarketClobClient clobClient;
+  private final @NonNull PolymarketGammaClient gammaClient;
 
   private final ConcurrentMap<String, SimOrder> ordersById = new ConcurrentHashMap<>();
   private final ConcurrentMap<String, Position> positionsByTokenId = new ConcurrentHashMap<>();
   private final ConcurrentMap<String, TokenMeta> metaByTokenId = new ConcurrentHashMap<>();
+
+  @PostConstruct
+  void logSimConfig() {
+    if (!enabled()) {
+      log.info("paper-exchange simulator disabled");
+      return;
+    }
+    log.info(
+        "paper-exchange simulator enabled (fillsEnabled={}, fillPollMillis={}, makerP0={}, makerMultPerTick={}, makerPMax={}, makerFillFrac={})",
+        sim.fillsEnabled(),
+        sim.fillPollMillis(),
+        sim.makerFillProbabilityPerPoll(),
+        sim.makerFillProbabilityMultiplierPerTick(),
+        sim.makerFillProbabilityMaxPerPoll(),
+        sim.makerFillFractionOfRemaining()
+    );
+  }
 
   public boolean enabled() {
     return Boolean.TRUE.equals(sim.enabled());
@@ -547,8 +565,8 @@ public class PaperExchangeSimulator {
       return Optional.of(cached);
     }
     try {
-      JsonNode root = clobClient.markets(Map.of("token_id", tokenId.trim(), "limit", "1"));
-      JsonNode arr = root == null ? null : root.path("data");
+      // NOTE: CLOB /markets does not reliably support token filters; use Gamma API.
+      JsonNode arr = gammaClient.markets(Map.of("clob_token_ids", tokenId.trim(), "limit", "1"), Map.of());
       if (arr == null || !arr.isArray() || arr.isEmpty()) {
         return Optional.empty();
       }
@@ -556,30 +574,40 @@ public class PaperExchangeSimulator {
       if (m == null || m.isNull()) {
         return Optional.empty();
       }
-      String marketSlug = textOrNull(m.get("market_slug"));
+      String marketSlug = textOrNull(m.get("slug"));
       String title = textOrNull(m.get("question"));
-      String conditionId = textOrNull(m.get("condition_id"));
+      String conditionId = textOrNull(m.get("conditionId"));
       if (title == null) {
         title = marketSlug;
       }
+
+      // Gamma encodes arrays as JSON strings (e.g. outcomes='["Up","Down"]').
       String outcome = "";
       int outcomeIndex = -1;
-      JsonNode tokens = m.get("tokens");
-      if (tokens != null && tokens.isArray()) {
-        for (int i = 0; i < tokens.size(); i++) {
-          JsonNode t = tokens.get(i);
-          if (t == null || t.isNull()) {
-            continue;
+      String clobTokenIdsRaw = textOrNull(m.get("clobTokenIds"));
+      String outcomesRaw = textOrNull(m.get("outcomes"));
+      if (clobTokenIdsRaw != null && outcomesRaw != null) {
+        try {
+          JsonNode tokenIds = objectMapper.readTree(clobTokenIdsRaw);
+          JsonNode outcomes = objectMapper.readTree(outcomesRaw);
+          if (tokenIds != null && tokenIds.isArray() && outcomes != null && outcomes.isArray()) {
+            for (int i = 0; i < tokenIds.size(); i++) {
+              JsonNode tid = tokenIds.get(i);
+              if (tid == null || tid.isNull()) {
+                continue;
+              }
+              if (tokenId.trim().equals(tid.asText("").trim())) {
+                outcomeIndex = i;
+                JsonNode oc = i < outcomes.size() ? outcomes.get(i) : null;
+                outcome = oc == null || oc.isNull() ? "" : oc.asText("");
+                break;
+              }
+            }
           }
-          String tid = textOrNull(t.get("token_id"));
-          if (tid != null && tid.trim().equals(tokenId.trim())) {
-            String oc = textOrNull(t.get("outcome"));
-            outcome = oc == null ? "" : oc;
-            outcomeIndex = i;
-            break;
-          }
+        } catch (Exception ignored) {
         }
       }
+
       TokenMeta meta = new TokenMeta(
           marketSlug == null ? "" : marketSlug,
           title == null ? "" : title,
