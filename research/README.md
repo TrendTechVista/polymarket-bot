@@ -10,6 +10,9 @@ This folder is for offline quant research (Step 4) using ClickHouse as the sourc
 
 ## Setup (recommended)
 
+If you’re on Apple Silicon and see “incompatible architecture” import errors (e.g. `need 'x86_64'`),
+run scripts with `arch -arm64 python3 ...` or create your venv under arm64.
+
 ### Using `uv` (recommended)
 
 ```bash
@@ -70,6 +73,16 @@ decision stream against inferred gabagool22 distributions:
 cd research
 python3 replication_score_orders.py --hours 24
 python3 replication_score_orders.py --hours 6 --run-id <your-run-id>
+```
+
+### Calibrate the paper maker fill/queue model (executor.sim)
+
+Uses our own bot’s lifecycle tables to estimate a fill-time model that makes paper execution timing match reality:
+
+```bash
+cd research
+python3 calibrate_maker_fill_model.py --hours 24
+python3 calibrate_maker_fill_model.py --hours 24 --run-id <your-run-id>
 ```
 
 ## Connection defaults

@@ -31,9 +31,13 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from io import StringIO
+import os
+import sys
 from typing import Dict, Iterable, Optional, Tuple
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
-import clickhouse_connect
 import numpy as np
 import pandas as pd
 
@@ -46,9 +50,56 @@ SERIES_SQL = """multiIf(
   'other'
 )"""
 
+def _has_format(sql: str) -> bool:
+    return " format " in f" {sql.lower()} "
 
-def _get_client() -> clickhouse_connect.driver.client.Client:
-    return clickhouse_connect.get_client(host="localhost", port=8123, database="polybot")
+
+@dataclass(frozen=True)
+class ClickHouseHttp:
+    url: str
+    database: str
+    user: str
+    password: str
+    timeout_seconds: int
+
+    def _post(self, sql: str) -> str:
+        params = {"database": self.database}
+        if self.user:
+            params["user"] = self.user
+        if self.password:
+            params["password"] = self.password
+        full = f"{self.url.rstrip('/')}/?{urlencode(params)}"
+        req = Request(full, data=sql.encode("utf-8"), method="POST")
+        with urlopen(req, timeout=self.timeout_seconds) as resp:
+            return resp.read().decode("utf-8")
+
+    def query_df(self, sql: str) -> pd.DataFrame:
+        sql = sql.strip().rstrip(";")
+        if not _has_format(sql):
+            sql = sql + "\nFORMAT CSVWithNames"
+        text = self._post(sql)
+        if not text.strip():
+            return pd.DataFrame()
+        return pd.read_csv(StringIO(text))
+
+    def show_tables(self) -> set[str]:
+        sql = "SELECT name FROM system.tables WHERE database = currentDatabase() FORMAT TabSeparated"
+        text = self._post(sql)
+        out: set[str] = set()
+        for line in text.splitlines():
+            name = line.strip()
+            if name:
+                out.add(name)
+        return out
+
+
+def _get_client() -> ClickHouseHttp:
+    url = os.getenv("CLICKHOUSE_URL", "http://localhost:8123")
+    database = os.getenv("CLICKHOUSE_DATABASE", "polybot")
+    user = os.getenv("CLICKHOUSE_USER", "default")
+    password = os.getenv("CLICKHOUSE_PASSWORD", "")
+    timeout_s = int(os.getenv("CLICKHOUSE_TIMEOUT_SECONDS", "30"))
+    return ClickHouseHttp(url=url, database=database, user=user, password=password, timeout_seconds=timeout_s)
 
 
 def _time_where(col: str, start_ts: Optional[str], end_ts: Optional[str], hours: int) -> str:
@@ -133,7 +184,7 @@ class TradeSource:
 
 
 def _pick_trade_source(client) -> TradeSource:
-    tables = set(r[0] for r in client.query("SHOW TABLES").result_rows)
+    tables = client.show_tables()
     for t in ("user_trade_enriched_v4", "user_trade_enriched_v3", "user_trade_enriched_v2", "user_trade_research"):
         if t in tables:
             return TradeSource(t)
@@ -294,9 +345,13 @@ def main() -> int:
     where_orders = _time_where("ts", args.start_ts, args.end_ts, args.hours)
     where_status = _time_where("ts", args.start_ts, args.end_ts, args.hours)
 
-    gab = fetch_gabagool_trades(client, trade_source, args.baseline_username, where_trades)
-    orders = fetch_strategy_orders(client, args.run_id, where_orders)
-    fills = fetch_filled_orders(client, where_status)
+    try:
+        gab = fetch_gabagool_trades(client, trade_source, args.baseline_username, where_trades)
+        orders = fetch_strategy_orders(client, args.run_id, where_orders)
+        fills = fetch_filled_orders(client, where_status)
+    except Exception as e:
+        print(f"ClickHouse query failed: {e}", file=sys.stderr)
+        return 2
 
     print(f"Trade source: polybot.{trade_source.table}")
     print(f"Baseline trades: {len(gab):,} | Strategy order events: {len(orders):,} | Filled orders: {len(fills):,}")
@@ -438,4 +493,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

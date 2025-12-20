@@ -24,6 +24,7 @@
         <module>strategy-service</module>
         <module>analytics-service</module>
         <module>ingestor-service</module>
+        <module>infrastructure-orchestrator-service</module>
     </modules>
 
     <properties>

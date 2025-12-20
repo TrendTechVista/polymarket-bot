@@ -410,7 +410,31 @@ public class PaperExchangeSimulator {
     if (bestBid.compareTo(price) > 0) {
       return;
     }
+
     double p = sim.makerFillProbabilityPerPoll();
+    if (p <= 0) {
+      return;
+    }
+
+    // Queue/priority proxy: if we improve above the best bid, fill odds increase.
+    int ticksAboveBestBid = 0;
+    try {
+      BigDecimal tickSize = BigDecimal.valueOf(0.01);
+      BigDecimal diff = price.subtract(bestBid);
+      if (diff.compareTo(BigDecimal.ZERO) > 0 && tickSize.compareTo(BigDecimal.ZERO) > 0) {
+        ticksAboveBestBid = diff.divide(tickSize, 0, RoundingMode.DOWN).intValue();
+      }
+    } catch (Exception ignored) {
+    }
+
+    double mult = sim.makerFillProbabilityMultiplierPerTick();
+    if (ticksAboveBestBid > 0 && mult > 0 && mult != 1.0) {
+      p = p * Math.pow(mult, ticksAboveBestBid);
+    }
+    double maxP = sim.makerFillProbabilityMaxPerPoll();
+    if (maxP > 0) {
+      p = Math.min(p, maxP);
+    }
     if (p <= 0) {
       return;
     }

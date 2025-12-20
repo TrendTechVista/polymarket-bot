@@ -1,0 +1,20 @@
+infrastructure:
+  startup-timeout-seconds: 60
+  health-check-interval-seconds: 5
+  stacks:
+    - name: analytics
+      file-path: ${POLYBOT_HOME:.}/docker-compose.analytics.yaml
+      project-name: polybot
+      expected-services: 2  # redpanda + clickhouse
+      startup-order: 1      # Start first
+    - name: monitoring
+      file-path: ${POLYBOT_HOME:.}/docker-compose.monitoring.yaml
+      project-name: polybot-monitoring
+      expected-services: 4  # prometheus + grafana + alertmanager + node-exporter
+      startup-order: 2      # Start after analytics
+
+# Logging - enable debug for infrastructure orchestration
+logging:
+  level:
+    com.polybot.infrastructure.orchestrator: DEBUG
+    com.polybot.infrastructure.orchestrator.service.DockerComposeLifecycleManager: DEBUG

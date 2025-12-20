@@ -32,6 +32,20 @@ public record ExecutorSimulationProperties(
      */
     @NotNull @DecimalMin("0.0") @DecimalMax("1.0") Double makerFillProbabilityPerPoll,
     /**
+     * Multiplier applied per tick when our price improves above the current best bid (queue priority proxy).
+     * For example, with base p=0.02 and multiplier=1.5:
+     * - 0 ticks above best bid: p=0.02
+     * - 1 tick above best bid: p=0.03
+     * - 2 ticks above best bid: p=0.045
+     *
+     * Set to 1.0 to disable tick-based scaling.
+     */
+    @NotNull @DecimalMin("0.0") @DecimalMax("10.0") Double makerFillProbabilityMultiplierPerTick,
+    /**
+     * Upper bound cap (0..1) on the per-poll maker fill probability after scaling.
+     */
+    @NotNull @DecimalMin("0.0") @DecimalMax("1.0") Double makerFillProbabilityMaxPerPoll,
+    /**
      * Fraction (0..1) of remaining size to fill when a maker-like fill triggers.
      */
     @NotNull @DecimalMin("0.0") @DecimalMax("1.0") Double makerFillFractionOfRemaining
@@ -55,9 +69,14 @@ public record ExecutorSimulationProperties(
     if (makerFillProbabilityPerPoll == null) {
       makerFillProbabilityPerPoll = 0.03;
     }
+    if (makerFillProbabilityMultiplierPerTick == null) {
+      makerFillProbabilityMultiplierPerTick = 1.0;
+    }
+    if (makerFillProbabilityMaxPerPoll == null) {
+      makerFillProbabilityMaxPerPoll = 0.50;
+    }
     if (makerFillFractionOfRemaining == null) {
       makerFillFractionOfRemaining = 0.25;
     }
   }
 }
-
