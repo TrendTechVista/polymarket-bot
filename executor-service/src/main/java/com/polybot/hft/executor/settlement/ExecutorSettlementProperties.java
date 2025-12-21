@@ -26,7 +26,20 @@ public record ExecutorSettlementProperties(
     /**
      * Minimum merge amount (in shares) to avoid sending tiny merge transactions.
      */
-    @NotNull @PositiveOrZero BigDecimal minMergeShares
+    @NotNull @PositiveOrZero BigDecimal minMergeShares,
+    /**
+     * Maximum retry attempts for failed settlement actions (redeem/merge txs).
+     */
+    @NotNull @PositiveOrZero Integer maxRetries,
+    /**
+     * When true, only merge complete sets for markets ending within mergeSecondsBeforeEnd.
+     * When false, merge complete sets immediately when detected.
+     */
+    @NotNull Boolean mergeOnlyNearEnd,
+    /**
+     * Only merge if market ends within this many seconds (when mergeOnlyNearEnd = true).
+     */
+    @NotNull @PositiveOrZero Long mergeSecondsBeforeEnd
 ) {
   public ExecutorSettlementProperties {
     if (enabled == null) {
@@ -40,6 +53,15 @@ public record ExecutorSettlementProperties(
     }
     if (minMergeShares == null) {
       minMergeShares = BigDecimal.ONE;
+    }
+    if (maxRetries == null) {
+      maxRetries = 3;
+    }
+    if (mergeOnlyNearEnd == null) {
+      mergeOnlyNearEnd = false;
+    }
+    if (mergeSecondsBeforeEnd == null) {
+      mergeSecondsBeforeEnd = 300L; // 5 minutes
     }
   }
 }

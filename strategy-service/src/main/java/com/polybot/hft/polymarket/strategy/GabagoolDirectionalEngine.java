@@ -1736,7 +1736,18 @@ public class GabagoolDirectionalEngine {
     }
 
     private BigDecimal currentExposureNotionalUsd() {
-        BigDecimal total = BigDecimal.ZERO;
+        // ========================================================================
+        // SMART EXPOSURE: Only count UNHEDGED positions, not complete sets!
+        // ========================================================================
+        // Complete sets (UP + DOWN) have ZERO risk because they pay out $1 guaranteed.
+        // Only the imbalance between UP and DOWN is actual exposure.
+        //
+        // Example: 100 UP @ $0.48 + 80 DOWN @ $0.50
+        //   Old (wrong): $48 + $40 = $88 exposure
+        //   New (correct): |100-80| × ~$0.50 = $10 exposure (only unhedged 20 shares)
+        // ========================================================================
+
+        BigDecimal openOrdersNotional = BigDecimal.ZERO;
         for (OrderState o : ordersByTokenId.values()) {
             if (o == null || o.price() == null || o.size() == null) {
                 continue;
@@ -1746,15 +1757,27 @@ public class GabagoolDirectionalEngine {
             if (remainingShares.compareTo(BigDecimal.ZERO) < 0) {
                 remainingShares = BigDecimal.ZERO;
             }
-            total = total.add(o.price().multiply(remainingShares));
+            // Open orders count as full exposure (conservative - we don't know if they'll be hedged)
+            openOrdersNotional = openOrdersNotional.add(o.price().multiply(remainingShares));
         }
-        PositionsCache cache = positionsCache.get();
-        BigDecimal positionsNotional = cache == null || cache.openNotionalUsd() == null ? BigDecimal.ZERO : cache.openNotionalUsd();
-        BigDecimal fillsNotional = fillsSincePositionsRefreshNotionalUsd.get();
-        if (fillsNotional == null) {
-            fillsNotional = BigDecimal.ZERO;
+
+        // For filled positions: only count the UNHEDGED imbalance, not complete sets
+        BigDecimal unhedgedPositionsNotional = BigDecimal.ZERO;
+        for (MarketInventory inv : inventoryByMarket.values()) {
+            if (inv == null) {
+                continue;
+            }
+            // Imbalance = |upShares - downShares| (the unhedged portion)
+            BigDecimal imbalance = inv.imbalance().abs();
+            if (imbalance.compareTo(BigDecimal.ZERO) > 0) {
+                // Use $0.50 as average price for imbalanced shares (conservative estimate)
+                // In reality, the unhedged leg could be UP or DOWN with different prices
+                unhedgedPositionsNotional = unhedgedPositionsNotional.add(
+                        imbalance.multiply(BigDecimal.valueOf(0.50)));
+            }
         }
-        BigDecimal totalExposure = total.add(positionsNotional).add(fillsNotional);
+
+        BigDecimal totalExposure = openOrdersNotional.add(unhedgedPositionsNotional);
 
         // Update metrics
         metricsService.updateTotalExposure(totalExposure);

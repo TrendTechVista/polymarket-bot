@@ -18,6 +18,7 @@ import org.web3j.crypto.Credentials;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -36,6 +37,7 @@ public class PolymarketSettlementService {
   private final @NonNull PaperExchangeSimulator simulator;
   private final @NonNull ExecutorSettlementProperties settlementProperties;
   private final @NonNull ProxyWalletFactoryTxSender txSender;
+  private final @NonNull MarketEndTimeCache marketEndTimeCache;
 
   private final AtomicBoolean inFlight = new AtomicBoolean(false);
 
@@ -85,12 +87,8 @@ public class PolymarketSettlementService {
 
       List<SettlementTxResult> txs = new ArrayList<>();
       for (SettlementAction action : actions) {
-        try {
-          txs.add(executeAction(action));
-        } catch (Exception e) {
-          log.warn("settlement action failed: {} err={}", action.summary(), e.toString());
-          txs.add(SettlementTxResult.failed(action, e.toString()));
-        }
+        SettlementTxResult result = executeActionWithRetry(action);
+        txs.add(result);
       }
       return new SettlementRunResult(true, false, "executed", actions, txs);
     } finally {
@@ -98,7 +96,32 @@ public class PolymarketSettlementService {
     }
   }
 
-  private SettlementTxResult executeAction(SettlementAction action) throws Exception {
+  private SettlementTxResult executeActionWithRetry(SettlementAction action) {
+    int maxRetries = settlementProperties.maxRetries() != null ? settlementProperties.maxRetries() : 3;
+    Exception lastError = null;
+
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          long backoffMs = (long) (1000 * Math.pow(2, attempt - 1)); // 1s, 2s, 4s
+          log.info("retrying settlement action (attempt {}/{}): {}", attempt + 1, maxRetries + 1, action.summary());
+          Thread.sleep(backoffMs);
+        }
+        executeAction(action);
+        return SettlementTxResult.submitted(action);
+      } catch (Exception e) {
+        lastError = e;
+        log.warn("settlement action failed (attempt {}/{}): {} err={}",
+            attempt + 1, maxRetries + 1, action.summary(), e.toString());
+      }
+    }
+
+    log.error("settlement action failed after {} retries: {} err={}",
+        maxRetries, action.summary(), lastError != null ? lastError.toString() : "unknown");
+    return SettlementTxResult.failed(action, lastError != null ? lastError.toString() : "unknown error");
+  }
+
+  private void executeAction(SettlementAction action) throws Exception {
     ContractConfig contracts = ContractConfig.forChainId(properties.polymarket().chainId());
     String conditionalTokens = contracts.conditionalTokens();
     String collateral = contracts.collateral();
@@ -126,7 +149,6 @@ public class PolymarketSettlementService {
     );
 
     txSender.sendFactoryProxyTx(factoryCalldata);
-    return SettlementTxResult.submitted(action);
   }
 
   private List<SettlementAction> planFromPositions(List<PolymarketPosition> positions) {
@@ -170,6 +192,19 @@ public class PolymarketSettlementService {
       boolean mergeable = ps.stream().anyMatch(p -> Boolean.TRUE.equals(p.mergeable()));
       if (!mergeable) {
         continue;
+      }
+
+      // Check if we should merge based on market end time
+      if (settlementProperties.mergeOnlyNearEnd()) {
+        Instant endTime = marketEndTimeCache.getEndTime(conditionId);
+        if (endTime != null) {
+          long secondsToEnd = java.time.Duration.between(Instant.now(), endTime).getSeconds();
+          long mergeWindow = settlementProperties.mergeSecondsBeforeEnd();
+          if (secondsToEnd > mergeWindow) {
+            // Market not ending soon enough, skip merge
+            continue;
+          }
+        }
       }
 
       // Mergeable amount is limited by the smallest leg size across outcomes (complete set).

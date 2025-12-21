@@ -45,7 +45,7 @@ executor:
   # Auto merge/redeem configuration
   # ============================================================================
   # SETTLEMENT STRATEGY (based on gabagool22's complete-set approach):
-  # - REDEEM: Automatically claim winnings when markets resolve
+  # - REDEEM: Automatically claim winnings when markets resolve (CRITICAL - always enable)
   # - MERGE: Convert complete sets (UP+DOWN) back to USDC to lock in edge
   #
   # gabagool22's edge = 1.0 - (bid_up + bid_down), typically 1-2%
@@ -56,3 +56,6 @@ executor:
     dry-run: true           # Set to false to actually send on-chain transactions
     poll-interval-millis: 30000   # Check for redeemable/mergeable positions every 30s
     min-merge-shares: 10    # Minimum shares to trigger a merge (avoid dust txs)
+    max-retries: 3          # Retry failed settlement txs up to 3 times (exponential backoff: 1s, 2s, 4s)
+    merge-only-near-end: true   # Only merge when markets ending soon (matches gabagool22 behavior)
+    merge-seconds-before-end: 600  # Merge when market ends within 10 minutes (catches both 15m and 1h markets)
