@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.polybot.hft.config.HftProperties;
 import com.polybot.hft.domain.HftHeaders;
 import com.polybot.hft.polymarket.api.PolymarketAccountResponse;
+import com.polybot.hft.polymarket.api.PolymarketBankrollResponse;
 import com.polybot.hft.polymarket.api.LimitOrderRequest;
 import com.polybot.hft.polymarket.api.OrderSubmissionResult;
 import com.polybot.hft.polymarket.data.PolymarketPosition;
@@ -67,6 +68,12 @@ public class ExecutorApiClient {
     String path = "/api/polymarket/account";
     HttpRequest request = baseRequest(path, Map.of()).GET().timeout(HTTP_TIMEOUT).header("Accept", "application/json").build();
     return sendJson(request, PolymarketAccountResponse.class);
+  }
+
+  public PolymarketBankrollResponse getBankroll() {
+    String path = "/api/polymarket/bankroll";
+    HttpRequest request = baseRequest(path, Map.of()).GET().timeout(HTTP_TIMEOUT).header("Accept", "application/json").build();
+    return sendJson(request, PolymarketBankrollResponse.class);
   }
 
   public PolymarketPosition[] getPositions(int limit, int offset) {

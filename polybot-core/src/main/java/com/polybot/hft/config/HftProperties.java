@@ -91,6 +91,21 @@ public record HftProperties(
     LIVE,
   }
 
+  public enum BankrollMode {
+    /**
+     * Use the configured {@code bankrollUsd} value (static).
+     */
+    FIXED,
+    /**
+     * Use executor-reported total equity (USDC balance + positions current value).
+     */
+    AUTO_EQUITY,
+    /**
+     * Use executor-reported USDC balance only (cash-like).
+     */
+    AUTO_CASH
+  }
+
   public record Executor(
       String baseUrl,
       @NotNull Boolean sendLiveAck
@@ -299,6 +314,14 @@ public record HftProperties(
         null,
         null,
         null,
+        null, // bankrollSmoothingAlpha
+        null, // bankrollMinThreshold
+        null, // bankrollTradingFraction
+        null,
+        null,
+        null,
+        null,
+        null,
         null,
         null,
         null,
@@ -345,6 +368,45 @@ public record HftProperties(
        */
       @NotNull @PositiveOrZero BigDecimal bankrollUsd,
       /**
+       * How the strategy should interpret bankroll for sizing/caps.
+       * When {@code FIXED}, uses {@code bankrollUsd}. When {@code AUTO_*}, uses the executor bankroll snapshot.
+       */
+      @NotNull BankrollMode bankrollMode,
+      /**
+       * Refresh interval for executor bankroll snapshots when {@code bankrollMode != FIXED}.
+       */
+      @NotNull @Min(1_000) Long bankrollRefreshMillis,
+      /**
+       * When enabled and {@code bankrollMode != FIXED}, scale the replica share schedule by:
+       * {@code (actualBankrollUsd / bankrollUsd)}.
+       */
+      @NotNull Boolean dynamicSizingEnabled,
+      /**
+       * Lower bound for the dynamic sizing multiplier.
+       */
+      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("100.0") Double dynamicSizingMinMultiplier,
+      /**
+       * Upper bound for the dynamic sizing multiplier.
+       */
+      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("100.0") Double dynamicSizingMaxMultiplier,
+      /**
+       * EMA smoothing alpha for bankroll updates (0..1). Higher = faster response.
+       * Example: 0.1 = slow smoothing (90% old, 10% new), 1.0 = no smoothing.
+       */
+      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double bankrollSmoothingAlpha,
+      /**
+       * Minimum bankroll threshold (USDC). Strategy will stop trading if effective bankroll falls below this.
+       * Acts as a circuit breaker to protect capital during drawdowns.
+       * When 0, circuit breaker is disabled.
+       */
+      @NotNull @PositiveOrZero BigDecimal bankrollMinThreshold,
+      /**
+       * Fraction of bankroll to deploy for trading (0..1).
+       * Example: 0.8 = only use 80% of bankroll, keep 20% as safety buffer.
+       * When 1.0, deploy full bankroll.
+       */
+      @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double bankrollTradingFraction,
+      /**
        * Optional cap for total exposure per market instance (USDC notional).
        * This applies across BOTH legs (UP+DOWN) and includes open orders + positions for that market.
        *
@@ -352,8 +414,6 @@ public record HftProperties(
        * {@code shares * (price_up + price_down) <= 10} (subject to other caps).
        *
        * When 0, per-market cap is disabled.
-      /**
-       * Optional cap per order as a fraction of {@code bankrollUsd} (0..1). When 0, disabled.
        */
       @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double maxOrderBankrollFraction,
       /**
@@ -462,6 +522,30 @@ public record HftProperties(
       }
       if (bankrollUsd == null) {
         bankrollUsd = BigDecimal.ZERO;
+      }
+      if (bankrollMode == null) {
+        bankrollMode = BankrollMode.FIXED;
+      }
+      if (bankrollRefreshMillis == null) {
+        bankrollRefreshMillis = 10_000L;
+      }
+      if (dynamicSizingEnabled == null) {
+        dynamicSizingEnabled = false;
+      }
+      if (dynamicSizingMinMultiplier == null) {
+        dynamicSizingMinMultiplier = 0.25;
+      }
+      if (dynamicSizingMaxMultiplier == null) {
+        dynamicSizingMaxMultiplier = 5.0;
+      }
+      if (bankrollSmoothingAlpha == null) {
+        bankrollSmoothingAlpha = 0.1;  // Slow smoothing by default (90% old, 10% new)
+      }
+      if (bankrollMinThreshold == null) {
+        bankrollMinThreshold = BigDecimal.ZERO;  // Circuit breaker disabled by default
+      }
+      if (bankrollTradingFraction == null) {
+        bankrollTradingFraction = 1.0;  // Deploy full bankroll by default
       }
       if (maxOrderBankrollFraction == null) {
         maxOrderBankrollFraction = 0.0;

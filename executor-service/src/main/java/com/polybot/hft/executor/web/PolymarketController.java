@@ -9,6 +9,7 @@ import com.polybot.hft.executor.events.ExecutorCancelOrderEvent;
 import com.polybot.hft.executor.events.ExecutorLimitOrderEvent;
 import com.polybot.hft.executor.events.ExecutorMarketOrderEvent;
 import com.polybot.hft.executor.events.ExecutorOrderError;
+import com.polybot.hft.executor.portfolio.PolymarketBankrollService;
 import com.polybot.hft.executor.metrics.ExecutorMetricsService;
 import com.polybot.hft.executor.order.ExecutorOrderMonitor;
 import com.polybot.hft.executor.sim.PaperExchangeSimulator;
@@ -16,6 +17,7 @@ import com.polybot.hft.polymarket.api.PolymarketAccountResponse;
 import com.polybot.hft.polymarket.api.LimitOrderRequest;
 import com.polybot.hft.polymarket.api.MarketOrderRequest;
 import com.polybot.hft.polymarket.api.OrderSubmissionResult;
+import com.polybot.hft.polymarket.api.PolymarketBankrollResponse;
 import com.polybot.hft.polymarket.api.PolymarketHealthResponse;
 import com.polybot.hft.polymarket.auth.PolymarketAuthContext;
 import com.polybot.hft.polymarket.data.PolymarketDataApiClient;
@@ -53,6 +55,7 @@ public class PolymarketController {
   private final @NonNull PolymarketTradingService tradingService;
   private final @NonNull ClobMarketWebSocketClient marketWebSocketClient;
   private final @NonNull PolymarketDataApiClient dataApiClient;
+  private final @NonNull PolymarketBankrollService bankrollService;
   private final @NonNull HftEventPublisher events;
   private final @NonNull ExecutorOrderMonitor orderMonitor;
   private final @NonNull PaperExchangeSimulator simulator;
@@ -105,6 +108,11 @@ public class PolymarketController {
             funderAddress()
         )
     );
+  }
+
+  @GetMapping("/bankroll")
+  public ResponseEntity<PolymarketBankrollResponse> getBankroll() {
+    return ResponseEntity.ok(bankrollService.snapshot());
   }
 
   @GetMapping("/positions")

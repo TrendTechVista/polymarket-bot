@@ -34,3 +34,14 @@ hft:
       api-key: ""
       api-secret: ""
       api-passphrase: ""
+
+# Executor-only (on-chain settlement)
+executor:
+  onchain:
+    rpc-url: https://polygon-rpc.com
+    proxy-wallet-factory-address: "0xab45c5a4b0c941a2f231c04c3f49182e1a254052"
+  settlement:
+    enabled: false
+    dry-run: true
+    poll-interval-millis: 30000
+    min-merge-shares: 1

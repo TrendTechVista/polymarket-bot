@@ -18,7 +18,7 @@ hft:
     base-url: http://localhost:8080
     # SAFETY: keep this false until you're ready to place LIVE orders.
     # When false, executor-service will refuse order placement with HTTP 428 (LiveTradingGuardFilter).
-    send-live-ack: false
+    send-live-ack: true
 
   polymarket:
     market-ws-enabled: true
@@ -37,7 +37,7 @@ hft:
   strategy:
     gabagool:
       # SAFETY: keep disabled until you're ready to go LIVE.
-      enabled: false
+      enabled: true
 
       # Loop / execution cadence (conservative for LIVE)
       refresh-millis: 500

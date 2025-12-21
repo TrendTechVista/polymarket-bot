@@ -96,3 +96,24 @@ These are controlled by env vars in the `live` profile:
 - `GABAGOOL_MAX_ORDER_FRAC=0.05` (≈ $10 per order cap)
 - `GABAGOOL_MAX_TOTAL_FRAC=0.50` (≈ $100 total exposure cap)
 - `HFT_MAX_ORDER_NOTIONAL_USD=10` (executor hard cap, same as per-order)
+
+## 5) Auto Merge / Redeem (capital recycling)
+
+Executor supports an optional on-chain settlement loop that:
+- redeems resolved positions (`redeemPositions`)
+- merges complete sets to unlock collateral early (`mergePositions`)
+
+Config (YAML):
+- `executor.onchain.rpc-url` (default: `https://polygon-rpc.com`)
+- `executor.onchain.proxy-wallet-factory-address` (default Polymarket factory on Polygon)
+- `executor.settlement.enabled` (default: `false`)
+- `executor.settlement.dry-run` (default: `true`)
+- `executor.settlement.poll-interval-millis` (default: `30000`)
+- `executor.settlement.min-merge-shares` (default: `1`)
+
+Manual run (recommended first):
+```bash
+curl -s 'http://localhost:8080/api/polymarket/settlement/plan' | jq .
+curl -s -X POST 'http://localhost:8080/api/polymarket/settlement/run?dryRun=true' | jq .
+curl -s -X POST 'http://localhost:8080/api/polymarket/settlement/run?dryRun=false' | jq .
+```

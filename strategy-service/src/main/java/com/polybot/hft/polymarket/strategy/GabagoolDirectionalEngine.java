@@ -5,6 +5,7 @@ import com.polybot.hft.config.HftProperties;
 import com.polybot.hft.domain.OrderSide;
 import com.polybot.hft.polymarket.api.LimitOrderRequest;
 import com.polybot.hft.polymarket.api.OrderSubmissionResult;
+import com.polybot.hft.polymarket.api.PolymarketBankrollResponse;
 import com.polybot.hft.polymarket.data.PolymarketPosition;
 import com.polybot.hft.polymarket.model.ClobOrderType;
 import com.polybot.hft.polymarket.ws.ClobMarketWebSocketClient;
@@ -49,6 +50,7 @@ public class GabagoolDirectionalEngine {
     private static final Duration POSITIONS_CACHE_TTL = Duration.ofSeconds(5);
     private static final Duration ORDER_STALE_TIMEOUT = Duration.ofSeconds(300);
     private static final Duration ORDER_STATUS_POLL_INTERVAL = Duration.ofSeconds(1);
+    private static final Duration BANKROLL_CACHE_STALE_GRACE = Duration.ofSeconds(60);
     private static final int ERROR_MAX_LEN = 512;
 
     private final @NonNull HftProperties properties;
@@ -76,6 +78,10 @@ public class GabagoolDirectionalEngine {
 
     private final AtomicReference<PositionsCache> positionsCache = new AtomicReference<>(
             new PositionsCache(Instant.EPOCH, Map.of(), Map.of(), BigDecimal.ZERO)
+    );
+
+    private final AtomicReference<BankrollSnapshot> bankrollCache = new AtomicReference<>(
+            new BankrollSnapshot(Instant.EPOCH, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
     );
 
     // Per-market inventory tracking for complete-set coordination (marketSlug -> MarketInventory)
@@ -165,6 +171,16 @@ public class GabagoolDirectionalEngine {
     private void tick(GabagoolConfig cfg) {
         Instant now = clock.instant();
         refreshPositionsCacheIfStale(now);
+        refreshBankrollCacheIfStale(cfg, now);
+
+        // Circuit breaker: stop trading if effective bankroll is below threshold
+        if (isBelowBankrollThreshold(cfg)) {
+            log.warn("CIRCUIT BREAKER: Effective bankroll below threshold ({}), skipping market evaluation",
+                    cfg.bankrollMinThreshold());
+            // Still check pending orders but don't open new positions
+            checkPendingOrders();
+            return;
+        }
 
         for (GabagoolMarket market : activeMarkets.get()) {
             try {
@@ -176,6 +192,162 @@ public class GabagoolDirectionalEngine {
 
         // Check pending orders for fills/cancellations
         checkPendingOrders();
+    }
+
+    /**
+     * Circuit breaker check - returns true if we should stop trading due to low bankroll.
+     */
+    private boolean isBelowBankrollThreshold(GabagoolConfig cfg) {
+        if (cfg == null) {
+            return false;
+        }
+        BigDecimal threshold = cfg.bankrollMinThreshold();
+        if (threshold == null || threshold.compareTo(BigDecimal.ZERO) <= 0) {
+            return false;  // Circuit breaker disabled
+        }
+
+        BigDecimal effective = resolveEffectiveBankrollUsd(cfg);
+        if (effective == null) {
+            return false;  // Can't determine, allow trading
+        }
+
+        return effective.compareTo(threshold) < 0;
+    }
+
+    private void refreshBankrollCacheIfStale(GabagoolConfig cfg, Instant now) {
+        if (cfg == null || now == null) {
+            return;
+        }
+
+        // FIXED mode: just publish configured bankroll (if any) for metrics.
+        if (cfg.bankrollMode() == HftProperties.BankrollMode.FIXED) {
+            if (cfg.bankrollUsd() != null) {
+                metricsService.updateBankroll(cfg.bankrollUsd());
+            }
+            return;
+        }
+
+        long refreshMillis = Math.max(1_000L, cfg.bankrollRefreshMillis());
+        BankrollSnapshot cached = bankrollCache.get();
+        if (cached != null && cached.fetchedAt() != null
+                && Duration.between(cached.fetchedAt(), now).toMillis() < refreshMillis) {
+            BigDecimal effective = resolveEffectiveBankrollUsd(cfg);
+            if (effective != null) {
+                metricsService.updateBankroll(effective);
+            }
+            return;
+        }
+
+        try {
+            PolymarketBankrollResponse resp = executorApi.getBankroll();
+            BigDecimal usdc = resp != null && resp.usdcBalance() != null ? resp.usdcBalance() : BigDecimal.ZERO;
+            BigDecimal equity = resp != null && resp.totalEquityUsd() != null ? resp.totalEquityUsd() : usdc;
+
+            // Apply EMA smoothing: smoothed = alpha * new + (1 - alpha) * old
+            double alpha = Math.max(0.01, Math.min(1.0, cfg.bankrollSmoothingAlpha()));
+            BigDecimal alphaBD = BigDecimal.valueOf(alpha);
+            BigDecimal oneMinusAlpha = BigDecimal.ONE.subtract(alphaBD);
+
+            BigDecimal prevSmoothedUsdc = cached != null && cached.smoothedUsdcBalance() != null
+                    ? cached.smoothedUsdcBalance() : usdc;
+            BigDecimal prevSmoothedEquity = cached != null && cached.smoothedEquityUsd() != null
+                    ? cached.smoothedEquityUsd() : equity;
+
+            BigDecimal smoothedUsdc = usdc.multiply(alphaBD).add(prevSmoothedUsdc.multiply(oneMinusAlpha));
+            BigDecimal smoothedEquity = equity.multiply(alphaBD).add(prevSmoothedEquity.multiply(oneMinusAlpha));
+
+            bankrollCache.set(new BankrollSnapshot(now, usdc, equity, smoothedUsdc, smoothedEquity));
+
+            BigDecimal effective = resolveEffectiveBankrollUsd(cfg);
+            if (effective != null) {
+                metricsService.updateBankroll(effective);
+            }
+
+            log.debug("bankroll refreshed: usdc={} equity={} smoothedUsdc={} smoothedEquity={} alpha={}",
+                    usdc, equity, smoothedUsdc, smoothedEquity, alpha);
+        } catch (Exception e) {
+            // Keep existing snapshot, but update timestamp for retry tracking.
+            BankrollSnapshot existing = bankrollCache.get();
+            if (existing == null) {
+                bankrollCache.set(new BankrollSnapshot(now, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+            } else {
+                bankrollCache.set(new BankrollSnapshot(
+                        now,
+                        existing.usdcBalance() == null ? BigDecimal.ZERO : existing.usdcBalance(),
+                        existing.totalEquityUsd() == null ? BigDecimal.ZERO : existing.totalEquityUsd(),
+                        existing.smoothedUsdcBalance() == null ? BigDecimal.ZERO : existing.smoothedUsdcBalance(),
+                        existing.smoothedEquityUsd() == null ? BigDecimal.ZERO : existing.smoothedEquityUsd()
+                ));
+            }
+            log.debug("bankroll refresh failed: {}", e.getMessage());
+        }
+    }
+
+    private BigDecimal resolveEffectiveBankrollUsd(GabagoolConfig cfg) {
+        if (cfg == null) {
+            return null;
+        }
+        if (cfg.bankrollMode() == HftProperties.BankrollMode.FIXED) {
+            return applyTradingFraction(cfg.bankrollUsd(), cfg);
+        }
+
+        BankrollSnapshot snap = bankrollCache.get();
+        if (snap == null || snap.fetchedAt() == null) {
+            return applyTradingFraction(cfg.bankrollUsd(), cfg);
+        }
+        Duration age = Duration.between(snap.fetchedAt(), clock.instant());
+        if (age.compareTo(BANKROLL_CACHE_STALE_GRACE) > 0) {
+            // If we haven't had a fresh snapshot recently, fall back to configured value.
+            return applyTradingFraction(cfg.bankrollUsd(), cfg);
+        }
+
+        // Use smoothed values for more stable sizing
+        BigDecimal candidate = cfg.bankrollMode() == HftProperties.BankrollMode.AUTO_CASH
+                ? snap.smoothedUsdcBalance()
+                : snap.smoothedEquityUsd();
+
+        if (candidate == null || candidate.compareTo(BigDecimal.ZERO) <= 0) {
+            return applyTradingFraction(cfg.bankrollUsd(), cfg);
+        }
+        return applyTradingFraction(candidate, cfg);
+    }
+
+    private BigDecimal applyTradingFraction(BigDecimal bankroll, GabagoolConfig cfg) {
+        if (bankroll == null || cfg == null) {
+            return bankroll;
+        }
+        double fraction = Math.max(0.0, Math.min(1.0, cfg.bankrollTradingFraction()));
+        if (fraction >= 1.0) {
+            return bankroll;
+        }
+        return bankroll.multiply(BigDecimal.valueOf(fraction));
+    }
+
+    private BigDecimal resolveDynamicSizingMultiplier(GabagoolConfig cfg) {
+        if (cfg == null || !cfg.dynamicSizingEnabled()) {
+            return BigDecimal.ONE;
+        }
+
+        BigDecimal reference = cfg.bankrollUsd();
+        if (reference == null || reference.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ONE;
+        }
+
+        BigDecimal actual = resolveEffectiveBankrollUsd(cfg);
+        if (actual == null || actual.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ONE;
+        }
+
+        BigDecimal ratio = actual.divide(reference, 8, RoundingMode.HALF_UP);
+        BigDecimal min = BigDecimal.valueOf(Math.max(0.0, cfg.dynamicSizingMinMultiplier()));
+        BigDecimal max = BigDecimal.valueOf(Math.max(min.doubleValue(), cfg.dynamicSizingMaxMultiplier()));
+        if (ratio.compareTo(min) < 0) {
+            return min;
+        }
+        if (ratio.compareTo(max) > 0) {
+            return max;
+        }
+        return ratio;
     }
 
     private void refreshPositionsCacheIfStale(Instant now) {
@@ -1348,6 +1520,14 @@ public class GabagoolDirectionalEngine {
                 cfg.quoteSizeBankrollFraction(),
                 cfg.improveTicks(),
                 cfg.bankrollUsd(),
+                cfg.bankrollMode(),
+                cfg.bankrollRefreshMillis(),
+                cfg.dynamicSizingEnabled(),
+                cfg.dynamicSizingMinMultiplier(),
+                cfg.dynamicSizingMaxMultiplier(),
+                cfg.bankrollSmoothingAlpha(),
+                cfg.bankrollMinThreshold(),
+                cfg.bankrollTradingFraction(),
                 cfg.maxOrderBankrollFraction(),
                 cfg.maxTotalBankrollFraction(),
                 // Complete-set coordination parameters
@@ -1477,8 +1657,11 @@ public class GabagoolDirectionalEngine {
             return null;
         }
 
+        // Dynamic sizing: scale the replica share schedule by (actualBankroll / configuredBankroll).
+        shares = shares.multiply(resolveDynamicSizingMultiplier(cfg));
+
         // Apply optional per-order and total exposure caps using bankroll configuration.
-        BigDecimal bankrollUsd = cfg.bankrollUsd();
+        BigDecimal bankrollUsd = resolveEffectiveBankrollUsd(cfg);
         if (bankrollUsd != null && bankrollUsd.compareTo(BigDecimal.ZERO) > 0) {
             if (cfg.maxOrderBankrollFraction() > 0) {
                 BigDecimal perOrderCap = bankrollUsd.multiply(BigDecimal.valueOf(cfg.maxOrderBankrollFraction()));
@@ -1517,7 +1700,7 @@ public class GabagoolDirectionalEngine {
         }
 
         BigDecimal maxNotionalUsd = properties.risk().maxOrderNotionalUsd();
-        BigDecimal bankrollUsd = cfg.bankrollUsd();
+        BigDecimal bankrollUsd = resolveEffectiveBankrollUsd(cfg);
         BigDecimal notional;
         if (bankrollUsd != null && bankrollUsd.compareTo(BigDecimal.ZERO) > 0 && cfg.quoteSizeBankrollFraction() > 0) {
             notional = bankrollUsd.multiply(BigDecimal.valueOf(cfg.quoteSizeBankrollFraction()));
@@ -1794,6 +1977,14 @@ public class GabagoolDirectionalEngine {
             double quoteSizeBankrollFraction,
             int improveTicks,
             BigDecimal bankrollUsd,
+            HftProperties.BankrollMode bankrollMode,
+            long bankrollRefreshMillis,
+            boolean dynamicSizingEnabled,
+            double dynamicSizingMinMultiplier,
+            double dynamicSizingMaxMultiplier,
+            double bankrollSmoothingAlpha,
+            BigDecimal bankrollMinThreshold,
+            double bankrollTradingFraction,
             double maxOrderBankrollFraction,
             double maxTotalBankrollFraction,
             // Complete-set coordination parameters
@@ -1854,5 +2045,13 @@ public class GabagoolDirectionalEngine {
             Map<String, BigDecimal> sharesByTokenId,
             Map<String, BigDecimal> openNotionalByTokenId,
             BigDecimal openNotionalUsd
+    ) {}
+
+    private record BankrollSnapshot(
+            Instant fetchedAt,
+            BigDecimal usdcBalance,
+            BigDecimal totalEquityUsd,
+            BigDecimal smoothedUsdcBalance,
+            BigDecimal smoothedEquityUsd
     ) {}
 }

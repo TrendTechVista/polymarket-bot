@@ -34,13 +34,37 @@ hft:
       min-replace-millis: 5000   # minimum cancel/replace cadence per tokenId
       min-seconds-to-end: 0      # trade window start (seconds to market end)
       max-seconds-to-end: 3600   # trade window end (caps 1h; 15m is capped to 900 in code)
-      quote-size: 10             # USDC notional per order (approx. entryPrice * shares)
-      quote-size-bankroll-fraction: 0.0
       improve-ticks: 0           # Place AT best bid (true maker, matches gabagool22)
-      # Optional bankroll-aware caps (set bankroll-usd > 0 to enable)
-      bankroll-usd: 0
-      max-order-bankroll-fraction: 0.0
-      max-total-bankroll-fraction: 0.0
+
+      # ============================================================================
+      # DYNAMIC SIZING - All sizing derives from bankroll, no static values!
+      # ============================================================================
+      # gabagool22 averages ~$7 notional per order. With a $5k bankroll, that's ~0.14%
+      # We use 0.1% as baseline, with safety caps to prevent oversizing.
+      # ============================================================================
+
+      # Primary sizing: each order = 0.1% of effective bankroll
+      quote-size: 10                        # Fallback only if bankroll unavailable
+      quote-size-bankroll-fraction: 0.001   # 0.1% of bankroll per order (~$10 on $10k)
+
+      # Bankroll source: AUTO_CASH = live USDC balance from exchange
+      bankroll-mode: AUTO_CASH
+      bankroll-usd: 0                       # Ignored when using AUTO_* mode
+      bankroll-refresh-millis: 10000        # Refresh balance every 10s
+
+      # EMA smoothing: prevents sizing whiplash from balance fluctuations
+      bankroll-smoothing-alpha: 0.2         # Moderate smoothing (0.1=slow, 1.0=instant)
+
+      # Safety caps
+      bankroll-min-threshold: 50            # Stop trading if balance < $50
+      bankroll-trading-fraction: 0.8        # Only deploy 80% of bankroll (20% buffer)
+      max-order-bankroll-fraction: 0.02     # Max 2% of bankroll per single order
+      max-total-bankroll-fraction: 0.5      # Max 50% total exposure across all orders
+
+      # Dynamic scaling (optional, for matching gabagool22's share schedule)
+      dynamic-sizing-enabled: false         # Enable if you want to scale to gabagool's exact sizes
+      dynamic-sizing-min-multiplier: 0.25
+      dynamic-sizing-max-multiplier: 5.0
 
       # ============================================================================
       # COMPLETE-SET COORDINATION (gabagool22's core edge)
