@@ -1,12 +1,26 @@
+# ============================================================================
+# Polybot .gitignore
+# ============================================================================
+
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# IntelliJ IDEA
+# IDE
 .idea/
 *.iml
 *.ipr
 *.iws
 out/
+.vscode/
+*.swp
+*.swo
+*~
 
 # Maven / Java
 target/
@@ -18,23 +32,89 @@ hs_err_pid*
 .mvn/repository/
 .m2/
 
-# Local config / secrets
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ============================================================================
+# SENSITIVE - NEVER COMMIT
+# ============================================================================
+
+# Environment files (contain secrets)
 .env
+.env.local
+.env.*.local
+*.env
+!.env.example
+!*.env.example
+
+# Config files that may contain secrets
 config/*.yaml
 config/*.yml
 !config/*.example.yaml
 !config/*.example.yml
 
-# Python
-__pycache__/
-*.pyc
+# Monitoring secrets
+monitoring/.env
+!monitoring/.env.example
 
-# Research / notebooks
+# Private keys / credentials
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
+# ============================================================================
+# Research Data (user-specific, potentially large)
+# ============================================================================
 research/data/
-research/.ipynb_checkpoints/
-.venv/
+research/output/
+*.parquet
+*.feather
+!research/data/.gitkeep
 
-# Runtime logs / local caches
+# ============================================================================
+# Runtime / Generated
+# ============================================================================
 logs/
 !logs/.gitkeep
 .cache/
+*.log
+*.tmp
+*.temp
+
+# Docker
+docker-compose.override.yml
+
+# Local testing
+test-output/
+coverage/
+.coverage
+htmlcov/

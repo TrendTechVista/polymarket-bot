@@ -17,7 +17,7 @@ ingestor:
     password: ""
     timeout-seconds: 10
   polymarket:
-    username: gabagool22
+    username: ${POLYMARKET_TARGET_USER:}
   polling:
     enabled: true
     backfill-on-start: false

@@ -1,6 +1,9 @@
-# Gabagool22 Clone — Current Strategy Spec (as implemented)
+# Example Strategy Spec: Complete-Set Arbitrage
 
-This document describes the **current** implemented “gabagool22 clone” logic in this repo, based on:
+This document describes an example **complete-set arbitrage strategy** for Polymarket Up/Down binary markets.
+This was reverse-engineered from observing successful traders and serves as a template for building your own strategies.
+
+**Strategy Implementation:**
 - `strategy-service/src/main/java/com/polybot/hft/polymarket/strategy/GabagoolDirectionalEngine.java`
 - `strategy-service/src/main/resources/application-develop.yaml`
 - `executor-service/src/main/java/com/polybot/hft/executor/sim/PaperExchangeSimulator.java`

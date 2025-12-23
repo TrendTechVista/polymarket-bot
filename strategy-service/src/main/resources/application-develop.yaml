@@ -12,7 +12,7 @@ hft:
     gabagool:
       enabled: true
       refresh-millis: 500
-      min-replace-millis: 5000
+      min-replace-millis: 2000          # Min time before replacing an order
       min-seconds-to-end: 0
       max-seconds-to-end: 3600
       improve-ticks: 0
@@ -29,24 +29,24 @@ hft:
       max-order-bankroll-fraction: 0.02
       max-total-bankroll-fraction: 0.5
 
-      # Complete-set arbitrage
-      complete-set-min-edge: 0.01
-      complete-set-max-skew-ticks: 1
-      complete-set-imbalance-shares-for-max-skew: 200
+      # Complete-set arbitrage configuration
+      complete-set-min-edge: 0.005                    # Minimum edge to accept (0.5 cents)
+      complete-set-max-skew-ticks: 2                  # Max ticks to skew based on inventory
+      complete-set-imbalance-shares-for-max-skew: 100 # Shares imbalance for max skew
       complete-set-top-up-enabled: true
-      complete-set-top-up-seconds-to-end: 60
-      complete-set-top-up-min-shares: 10
+      complete-set-top-up-seconds-to-end: 120         # Start top-up this far from end
+      complete-set-top-up-min-shares: 5               # Min imbalance to trigger top-up
       complete-set-fast-top-up-enabled: true
-      complete-set-fast-top-up-min-shares: 10
-      complete-set-fast-top-up-min-seconds-after-fill: 3
-      complete-set-fast-top-up-max-seconds-after-fill: 120
-      complete-set-fast-top-up-cooldown-millis: 15000
-      complete-set-fast-top-up-min-edge: 0.01
+      complete-set-fast-top-up-min-shares: 5          # Min shares for fast top-up
+      complete-set-fast-top-up-min-seconds-after-fill: 1   # Min seconds after fill
+      complete-set-fast-top-up-max-seconds-after-fill: 60  # Max seconds after fill
+      complete-set-fast-top-up-cooldown-millis: 1000  # Cooldown between fast top-ups
+      complete-set-fast-top-up-min-edge: 0.005        # Min edge for fast top-up
 
-      # Taker mode (disabled - using maker-only)
-      taker-mode-enabled: false
-      taker-mode-max-edge: 0.015
-      taker-mode-max-spread: 0.02
+      # Taker mode - cross the spread when edge is favorable
+      taker-mode-enabled: true
+      taker-mode-max-edge: 0.02                       # Max edge to take (2 cents)
+      taker-mode-max-spread: 0.03                     # Max spread to cross (3 cents)
 
 logging:
   level:
