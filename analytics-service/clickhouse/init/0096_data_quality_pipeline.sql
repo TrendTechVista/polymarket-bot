@@ -1,6 +1,9 @@
 -- =============================================================================
 -- DATA QUALITY PIPELINE
 -- =============================================================================
+-- CONFIGURATION: Replace 'TARGET_USER' with the Polymarket username you want
+-- to analyze. Run: sed -i 's/TARGET_USER/actual_username/g' this_file.sql
+-- =============================================================================
 -- Purpose: Create clean, validated datasets for strategy backtesting
 --
 -- Data Quality Requirements:
@@ -11,7 +14,7 @@
 --   5. TOB lag must be < 5 seconds (fresh data)
 --
 -- Components:
---   - user_trade_clean: Only validated gabagool22 trades with dual-side TOB
+--   - user_trade_clean: Only validated TARGET_USER trades with dual-side TOB
 --   - data_quality_metrics: Real-time quality monitoring
 --   - data_quality_by_day: Daily quality trends
 -- =============================================================================
@@ -177,7 +180,7 @@ WITH
         ASOF LEFT JOIN polybot.market_ws_tob o
             ON if(u.outcome = 'Up', g.token_ids[2], g.token_ids[1]) = o.asset_id
             AND u.ts >= o.ts
-        WHERE u.username = 'gabagool22'
+        WHERE u.username = 'TARGET_USER'
           AND (u.market_slug LIKE '%updown%' OR u.market_slug LIKE '%up-or-down%')
     )
 SELECT
@@ -250,12 +253,12 @@ WITH
             countIf(ws_best_bid_price > 0) AS has_ws_tob,
             countIf(is_resolved = 1) AS is_resolved
         FROM polybot.user_trade_enriched_v3
-        WHERE username = 'gabagool22'
+        WHERE username = 'TARGET_USER'
     ),
     clean_counts AS (
         SELECT count() AS total_clean
         FROM polybot.user_trade_clean
-        WHERE username = 'gabagool22'
+        WHERE username = 'TARGET_USER'
     )
 SELECT
     r.total_raw,
@@ -284,7 +287,7 @@ WITH
             count() AS raw_count,
             countIf(ws_best_bid_price > 0) AS ws_tob_count
         FROM polybot.user_trade_enriched_v3
-        WHERE username = 'gabagool22'
+        WHERE username = 'TARGET_USER'
           AND (market_slug LIKE '%updown%' OR market_slug LIKE '%up-or-down%')
         GROUP BY day
     ),
@@ -293,7 +296,7 @@ WITH
             toDate(ts) AS day,
             count() AS clean_count
         FROM polybot.user_trade_clean
-        WHERE username = 'gabagool22'
+        WHERE username = 'TARGET_USER'
         GROUP BY day
     )
 SELECT
@@ -350,7 +353,7 @@ SELECT
     tob_source
 
 FROM polybot.user_trade_clean
-WHERE username = 'gabagool22'
+WHERE username = 'TARGET_USER'
 ORDER BY ts;
 
 
@@ -391,7 +394,7 @@ WITH
 
         FROM polybot.user_trade_clean t
         LEFT JOIN base_sizes b ON t.series = b.series
-        WHERE t.username = 'gabagool22'
+        WHERE t.username = 'TARGET_USER'
     )
 SELECT
     ts,

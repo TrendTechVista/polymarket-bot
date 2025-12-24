@@ -22,7 +22,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Discovers active Up/Down markets from Polymarket Gamma API.
- * These are the markets gabagool22 trades.
+ * These are the markets the target user trades.
  *
  * Notes:
  * - Market universe is stable: BTC/ETH Up/Down 15m + 1h series only.
@@ -37,7 +37,7 @@ public class GabagoolMarketDiscovery {
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(10);
     private static final ZoneId ET_ZONE = ZoneId.of("America/New_York");
 
-    // Slug patterns for gabagool22's target markets
+    // Slug patterns for the target user's target markets
     // - 15min BTC: btc-updown-15m-{epoch}
     // - 15min ETH: eth-updown-15m-{epoch}
     // - 1hour BTC: bitcoin-up-or-down-{date}

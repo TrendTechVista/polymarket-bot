@@ -11,7 +11,7 @@ from datetime import datetime
 import sys
 
 # Redirect output to file
-output_file = open('/tmp/gabagool_final_analysis.txt', 'w')
+output_file = open('/tmp/strategy_final_analysis.txt', 'w')
 
 def log(msg=""):
     print(msg)
@@ -41,7 +41,7 @@ r = client.query("""
         count(DISTINCT market_slug) as unique_markets,
         round(sum(size * price), 2) as total_volume
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22'
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')
 """)
 row = r.result_rows[0]
 log(f"\n📊 RAW DATA:")
@@ -61,7 +61,7 @@ r = client.query("""
         countIf(length(bid_levels) > 0) as with_depth,
         countIf(settle_price IS NOT NULL AND mid > 0) as resolved_with_mid
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22'
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')
 """)
 row = r.result_rows[0]
 total = row[0]
@@ -95,7 +95,7 @@ r = client.query("""
         round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0) * 100.0 / 
               nullIf(countIf(settle_price IS NOT NULL), 0), 1) as win_rate
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22'
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')
     GROUP BY market_type
     ORDER BY trades DESC
 """)
@@ -121,7 +121,7 @@ r = client.query("""
         round(avg(mid), 4) as avg_mid,
         round(avg(settle_price), 4) as avg_settle
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND mid > 0
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND mid > 0
 """)
 row = r.result_rows[0]
 actual = row[1]
@@ -151,7 +151,7 @@ r = client.query("""
         round(sumIf((settle_price - price) * size, (settle_price - price) * size > 0), 2) as win_pnl,
         round(sumIf((settle_price - price) * size, (settle_price - price) * size < 0), 2) as loss_pnl
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL
 """)
 row = r.result_rows[0]
 total_r, winners, losers = row[0], row[1], row[2]
@@ -179,7 +179,7 @@ r = client.query("""
         round(sum((settle_price - price) * size), 2) as pnl,
         round(countIf((settle_price - price) * size > 0) * 100.0 / count(), 1) as win_rate
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL
     GROUP BY outcome
 """)
 log(f"\n{'Outcome':<8} {'Trades':>8} {'AvgPrice':>10} {'AvgSettle':>10} {'PnL':>12} {'WinRate':>8}")
@@ -201,7 +201,7 @@ r = client.query("""
         min(seconds_to_end) as min_sec,
         max(seconds_to_end) as max_sec
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND seconds_to_end IS NOT NULL
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND seconds_to_end IS NOT NULL
 """)
 row = r.result_rows[0]
 log(f"\n⏱️ TIMING:")
@@ -223,7 +223,7 @@ r = client.query("""
         round(sum((settle_price - price) * size), 2) as pnl,
         round(countIf((settle_price - price) * size > 0) * 100.0 / count(), 1) as win_rate
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND seconds_to_end IS NOT NULL
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND seconds_to_end IS NOT NULL
     GROUP BY bucket
     ORDER BY bucket
 """)
@@ -247,7 +247,7 @@ r = client.query("""
         round(avg(price - mid), 4) as avg_slippage,
         round(avg(best_ask_price - best_bid_price), 4) as avg_spread
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND mid > 0
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND mid > 0
 """)
 row = r.result_rows[0]
 total_e = row[0]
@@ -272,7 +272,7 @@ r = client.query("""
         round(sum((settle_price - best_bid_price) * size), 2) as maker_bid,
         round(sum((settle_price - best_ask_price) * size), 2) as taker_ask
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' 
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') 
     AND settle_price IS NOT NULL AND mid > 0 
     AND best_bid_price > 0 AND best_ask_price > 0
 """)
@@ -295,7 +295,7 @@ log("=" * 80)
 df = client.query_df("""
     SELECT price, size, mid, best_bid_price, best_ask_price, settle_price
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL 
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL 
     AND mid > 0 AND best_bid_price > 0 AND best_ask_price > 0
 """)
 
@@ -356,4 +356,4 @@ log("ANALYSIS COMPLETE")
 log("=" * 80)
 
 output_file.close()
-print("Analysis saved to /tmp/gabagool_final_analysis.txt")
+print("Analysis saved to /tmp/strategy_final_analysis.txt")

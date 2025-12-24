@@ -3,11 +3,11 @@
 GABAGOOL22 STRATEGY BACKTESTER
 ==============================
 A proper replay system that:
-1. Loads historical market data + gabagool22 trades
+1. Loads historical market data + target trader trades
 2. Cleans and validates data quality
 3. Replays events in chronological order
 4. Applies our strategy logic to each event
-5. Compares our simulated trades to gabagool22's actual trades
+5. Compares our simulated trades to target trader's actual trades
 6. Generates a replication score report
 """
 
@@ -141,7 +141,7 @@ class MarketState:
 
 @dataclass
 class GabagoolTrade:
-    """A single gabagool22 trade"""
+    """A single target trader trade"""
     ts: datetime
     market_slug: str
     series: str
@@ -172,7 +172,7 @@ class SimulatedOrder:
 
 @dataclass
 class TradeComparison:
-    """Comparison of gabagool22 trade vs our simulated response"""
+    """Comparison of target trader trade vs our simulated response"""
     gabagool_trade: GabagoolTrade
     our_response: SimulatedOrder
 
@@ -204,9 +204,9 @@ class DataPipeline:
     def load_gabagool_trades(self,
                              start_time: Optional[datetime] = None,
                              end_time: Optional[datetime] = None) -> pd.DataFrame:
-        """Load gabagool22 trades with all required fields"""
+        """Load target trader trades with all required fields"""
 
-        where_clauses = ["username = 'gabagool22'"]
+        where_clauses = ["username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')"]
         if start_time:
             where_clauses.append(f"ts >= '{start_time.isoformat()}'")
         if end_time:
@@ -255,7 +255,7 @@ class DataPipeline:
         """
 
         df = self.client.query_df(query)
-        print(f"Loaded {len(df)} gabagool22 trades")
+        print(f"Loaded {len(df)} target trader trades")
         return df
 
     def load_market_ws_tob(self,
@@ -345,7 +345,7 @@ class DataPipeline:
 class StrategyReplayEngine:
     """
     Replays our strategy logic against historical data.
-    For each gabagool22 trade, determines what our strategy would have done.
+    For each target trader trade, determines what our strategy would have done.
     """
 
     def __init__(self, config: StrategyConfig):
@@ -466,7 +466,7 @@ class StrategyReplayEngine:
 
     def compare_trade(self, trade: GabagoolTrade, our_response: SimulatedOrder) -> TradeComparison:
         """
-        Compare gabagool22's actual trade to our simulated response.
+        Compare target trader's actual trade to our simulated response.
         Determine if we would have matched.
         """
         comparison = TradeComparison(
@@ -478,9 +478,9 @@ class StrategyReplayEngine:
             return comparison
 
         # Would we have filled?
-        # If gabagool22 filled at or better than our quote, we likely would too
+        # If target trader filled at or better than our quote, we likely would too
         if trade.side == 'BUY':
-            # For BUY, gabagool22 filled at trade.price
+            # For BUY, target trader filled at trade.price
             # Our quote would be at our_response.quote_price
             # We'd fill if our quote >= his fill (we're willing to pay at least as much)
             comparison.would_match = our_response.quote_price >= trade.price - 0.01
@@ -687,7 +687,7 @@ class Backtester:
         s = report['summary']
         print(f"\n{'SUMMARY':^60}")
         print("-" * 60)
-        print(f"Total gabagool22 trades:     {s['total_trades']:,}")
+        print(f"Total target trader trades:     {s['total_trades']:,}")
         print(f"We would quote:              {s['we_would_quote']:,} ({s['quote_rate_pct']:.1f}%)")
         print(f"We would match:              {s['we_would_match']:,} ({s['match_rate_pct']:.1f}%)")
         print(f"Fill rate if quoted:         {s['fill_rate_if_quoted_pct']:.1f}%")

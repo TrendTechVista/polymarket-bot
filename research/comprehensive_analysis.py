@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Comprehensive gabagool22 analysis with latest data."""
+"""Comprehensive target user analysis with latest data."""
 
 import clickhouse_connect
 import pandas as pd
@@ -31,7 +31,7 @@ result = client.query("""
         min(ts) as first_trade,
         max(ts) as last_trade
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22'
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')
 """)
 row = result.result_rows[0]
 log(f"Total trades: {row[0]:,}")
@@ -52,7 +52,7 @@ result = client.query("""
         round(avg(price), 4) as avg_price,
         round(avg(mid), 4) as avg_mid
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND mid > 0
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND mid > 0
 """)
 row = result.result_rows[0]
 actual_pnl = row[1]
@@ -74,7 +74,7 @@ result = client.query("""
         countIf(if(side = 'BUY', (settle_price - price) * size, (price - settle_price) * size) < 0) as losers,
         countIf(if(side = 'BUY', (settle_price - price) * size, (price - settle_price) * size) = 0) as breakeven
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL
 """)
 row = result.result_rows[0]
 total = row[0]
@@ -95,7 +95,7 @@ result = client.query("""
         round(avg(price - mid), 4) as avg_slippage,
         round(sum((mid - price) * size), 2) as total_exec_impact
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND mid > 0
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND mid > 0
 """)
 row = result.result_rows[0]
 log(f"Paid MORE than mid: {row[1]:,} ({row[1]/row[0]*100:.1f}%)")
@@ -118,7 +118,7 @@ result = client.query("""
         round(sum(if(side = 'BUY', (settle_price - price) * size, (price - settle_price) * size)), 2) as actual_pnl,
         round(countIf(if(side = 'BUY', (settle_price - price) * size, (price - settle_price) * size) > 0) * 100.0 / count(), 1) as win_rate
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND mid > 0
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND mid > 0
     GROUP BY market_type
     ORDER BY trades DESC
 """)
@@ -134,7 +134,7 @@ result = client.query("""
         min(seconds_to_end) as min_seconds,
         max(seconds_to_end) as max_seconds
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND seconds_to_end IS NOT NULL
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND seconds_to_end IS NOT NULL
 """)
 row = result.result_rows[0]
 log(f"Avg seconds to end: {row[0]:.0f} ({row[0]/60:.1f} min)")
@@ -156,7 +156,7 @@ result = client.query("""
         round(sum(if(side = 'BUY', (settle_price - price) * size, (price - settle_price) * size)), 2) as pnl,
         round(countIf(if(side = 'BUY', (settle_price - price) * size, (price - settle_price) * size) > 0) * 100.0 / count(), 1) as win_rate
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND seconds_to_end IS NOT NULL
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND seconds_to_end IS NOT NULL
     GROUP BY timing
     ORDER BY timing
 """)
@@ -173,7 +173,7 @@ result = client.query("""
         round(avg(if(length(bid_levels) > 0, total_bid_volume, NULL)), 2) as avg_bid_vol,
         round(avg(if(length(bid_levels) > 0, book_imbalance, NULL)), 4) as avg_imbalance
     FROM user_trade_enriched_v2
-    WHERE username = 'gabagool22'
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')
 """)
 row = result.result_rows[0]
 log(f"Trades with depth: {row[1]:,} / {row[0]:,} ({row[1]/row[0]*100:.1f}%)")
@@ -194,7 +194,7 @@ if mid_pnl != 0:
     log(f"% of alpha lost to execution: {abs(exec_cost)/abs(mid_pnl)*100:.1f}%" if mid_pnl > 0 else "N/A")
 
 # Save output
-with open('/tmp/gabagool_analysis.txt', 'w') as f:
+with open('/tmp/strategy_analysis.txt', 'w') as f:
     f.write('\n'.join(output))
 
-print("\n\nAnalysis saved to /tmp/gabagool_analysis.txt")
+print("\n\nAnalysis saved to /tmp/strategy_analysis.txt")

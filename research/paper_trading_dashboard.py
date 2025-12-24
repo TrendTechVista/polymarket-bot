@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Paper Trading Dashboard - Monitor your gabagool22 clone in real-time.
+Paper Trading Dashboard - Monitor your target user clone in real-time.
 
 Usage:
     ./.venv/bin/python research/paper_trading_dashboard.py
@@ -151,7 +151,7 @@ def run_dashboard():
             round(100.0 * countIf(ws_mid > 0) / count(), 1) as coverage_pct,
             round(avgIf(ws_tob_lag_millis, ws_mid > 0), 0) as avg_lag_ms
         FROM polybot.user_trade_enriched_v4
-        WHERE username = 'gabagool22'
+        WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')
           AND ts > now() - INTERVAL 10 MINUTE
     """).result_rows
     if ws and ws[0][0] > 0:
@@ -160,22 +160,22 @@ def run_dashboard():
     else:
         print("  No trades in last 10 minutes")
 
-    # 7. gabagool22 Activity (for comparison)
-    print_section("gabagool22 Activity (Last 10 min)")
+    # 7. target user Activity (for comparison)
+    print_section("target user Activity (Last 10 min)")
     gab = client.query("""
         SELECT
             count() as trades,
             round(sum(price * size), 2) as notional,
             round(sumIf(realized_pnl, outcome != ''), 2) as realized_pnl
         FROM polybot.user_trade_enriched_v4
-        WHERE username = 'gabagool22'
+        WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')
           AND ts > now() - INTERVAL 10 MINUTE
     """).result_rows
     if gab and gab[0][0] > 0:
         trades, notional, pnl = gab[0]
         print(f"  Trades: {trades} | Notional: ${notional:.2f} | Realized PnL: ${pnl:.2f}")
     else:
-        print("  No gabagool22 trades in last 10 minutes")
+        print("  No target user trades in last 10 minutes")
 
     # 8. Service Health
     print_section("Service Health")

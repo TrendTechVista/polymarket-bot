@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run full analysis on latest gabagool22 snapshot."""
+"""Run full analysis on latest target user snapshot."""
 
 import pandas as pd
 import numpy as np
@@ -15,7 +15,7 @@ print(f'Snapshots dir: {snapshots_dir}')
 
 # Find latest snapshot with features.parquet
 snapshots = sorted([d for d in snapshots_dir.iterdir()
-                   if d.is_dir() and 'gabagool22' in d.name and (d / 'features.parquet').exists()])
+                   if d.is_dir() and os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') in d.name and (d / 'features.parquet').exists()])
 if not snapshots:
     raise FileNotFoundError("No snapshots with features.parquet found")
 snapshot_path = snapshots[-1]

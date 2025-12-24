@@ -3,7 +3,7 @@ package com.polybot.hft.polymarket.strategy.config;
 import java.math.BigDecimal;
 
 /**
- * Complete-set arbitrage configuration (core gabagool22 strategy).
+ * Complete-set arbitrage configuration (core target user strategy).
  */
 public record CompleteSetConfig(
         double minEdge,

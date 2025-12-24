@@ -1,11 +1,14 @@
 -- =============================================================================
 -- STRATEGY VALIDATION FRAMEWORK
 -- =============================================================================
--- Purpose: Compare our simulated strategy against gabagool22's actual trades
--- to validate that our implementation correctly replicates his behavior.
+-- CONFIGURATION: Replace 'TARGET_USER' with the Polymarket username you want
+-- to analyze. Run: sed -i 's/TARGET_USER/actual_username/g' this_file.sql
+-- =============================================================================
+-- Purpose: Compare our simulated strategy against TARGET_USER's actual trades
+-- to validate that our implementation correctly replicates their behavior.
 --
 -- Components:
---   1. strategy_replay_input     - Enriched gabagool22 trades with both-sides TOB
+--   1. strategy_replay_input     - Enriched TARGET_USER trades with both-sides TOB
 --   2. strategy_replay_decision  - What OUR strategy would have done at each trade
 --   3. replication_score_summary - Aggregate metrics on how closely we match
 -- =============================================================================
@@ -14,7 +17,7 @@
 -- =============================================================================
 -- 1) STRATEGY REPLAY INPUT
 -- =============================================================================
--- For each gabagool22 trade, gather all inputs our strategy would need:
+-- For each TARGET_USER trade, gather all inputs our strategy would need:
 --   - Market metadata (slug, series type, seconds_to_end)
 --   - Book state for the TRADED token
 --   - Book state for the OTHER token (for complete-set edge calculation)
@@ -38,7 +41,7 @@ WITH
                arrayElement(token_ids, 1)   -- Up token
             ) AS other_token_id
         FROM polybot.user_trade_enriched_v3
-        WHERE username = 'gabagool22'
+        WHERE username = 'TARGET_USER'
           AND (market_slug LIKE '%updown%' OR market_slug LIKE '%up-or-down%')
     ),
     -- Get other side's book state from the WS TOB (ASOF join)
@@ -187,7 +190,7 @@ WITH
               AND r.complete_set_edge >= (SELECT min_complete_set_edge FROM params)
             ) AS would_quote,
 
-            -- Fill probability: did gabagool22 fill AT or BETTER than our quote?
+            -- Fill probability: did TARGET_USER fill AT or BETTER than our quote?
             r.actual_fill_price <= r.our_best_bid + 0.01 AS likely_would_fill,
 
             -- Price comparison
@@ -243,7 +246,7 @@ FROM decisions;
 -- =============================================================================
 -- 3) REPLICATION SCORE SUMMARY
 -- =============================================================================
--- Aggregate metrics showing how closely our strategy matches gabagool22
+-- Aggregate metrics showing how closely our strategy matches TARGET_USER
 
 CREATE OR REPLACE VIEW polybot.strategy_replication_score AS
 SELECT

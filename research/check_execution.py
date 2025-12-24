@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deep dive into gabagool22 execution quality."""
+"""Deep dive into target user execution quality."""
 
 import pandas as pd
 from pathlib import Path
@@ -11,7 +11,7 @@ def log(msg):
     output_lines.append(msg)
     print(msg, flush=True)
 
-snapshot = Path('/Users/antoniostano/programming/polybot/research/data/snapshots/gabagool22-20251216T113830+0000')
+snapshot = Path('/Users/antoniostano/programming/polybot/research/data/snapshots/target user-20251216T113830+0000')
 df = pd.read_parquet(snapshot / 'features.parquet')
 
 df['settle_price'] = pd.to_numeric(df.get('settle_price'), errors='coerce')

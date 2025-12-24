@@ -25,7 +25,7 @@ executor:
 
   onchain:
     rpc-url: https://polygon-rpc.com
-    proxy-wallet-factory-address: "0xab45c5a4b0c941a2f231c04c3f49182e1a254052"
+    proxy-wallet-factory-address: ""
 
   settlement:
     enabled: false

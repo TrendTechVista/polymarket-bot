@@ -68,7 +68,7 @@ public class InfrastructureController {
                 "redpanda_admin", "http://localhost:9644"
             ),
             "monitoring", Map.of(
-                "grafana", "http://localhost:3000 (admin/polybot123)",
+                "grafana", "http://localhost:3000 (admin/changeme)",
                 "prometheus", "http://localhost:9090",
                 "alertmanager", "http://localhost:9093"
             ),

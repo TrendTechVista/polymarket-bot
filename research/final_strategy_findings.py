@@ -4,7 +4,7 @@ GABAGOOL22 Strategy Analysis - Final Findings
 December 16, 2025
 
 This script documents all the key findings from our reverse-engineering analysis
-of gabagool22's trading strategy on Polymarket.
+of target user's trading strategy on Polymarket.
 """
 
 import pandas as pd
@@ -38,7 +38,7 @@ def main():
             min(ts) as first_trade,
             max(ts) as last_trade
         FROM user_trade_enriched_v2
-        WHERE username = 'gabagool22'
+        WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')
     """)
 
     print(f"\nTotal trades: {summary['total_trades'].iloc[0]:,}")
@@ -67,7 +67,7 @@ def main():
             round(countIf(settle_price IS NOT NULL AND (settle_price - price) * size > 0) * 100.0 / 
                   nullIf(countIf(settle_price IS NOT NULL), 0), 1) as win_rate
         FROM user_trade_enriched_v2
-        WHERE username = 'gabagool22'
+        WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')
         GROUP BY market_type
         ORDER BY pnl DESC
     """)
@@ -93,7 +93,7 @@ def main():
             round(sum((settle_price - mid) * size), 2) as directional_alpha,
             round(sum((mid - price) * size), 2) as execution_edge
         FROM user_trade_enriched_v2
-        WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND mid > 0
+        WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND mid > 0
     """)
 
     actual = pnl['actual_pnl'].iloc[0]
@@ -120,7 +120,7 @@ def main():
             round(sum((settle_price - price) * size), 2) as pnl,
             round(countIf((settle_price - price) * size > 0) * 100.0 / count(), 1) as win_rate
         FROM user_trade_enriched_v2
-        WHERE username = 'gabagool22' AND settle_price IS NOT NULL
+        WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL
         GROUP BY outcome
     """)
 
@@ -155,7 +155,7 @@ def main():
             round(sum((settle_price - price) * size), 2) as pnl,
             round(countIf((settle_price - price) * size > 0) * 100.0 / count(), 1) as win_rate
         FROM user_trade_enriched_v2
-        WHERE username = 'gabagool22' AND settle_price IS NOT NULL AND seconds_to_end IS NOT NULL
+        WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL AND seconds_to_end IS NOT NULL
         GROUP BY bucket
         ORDER BY bucket
     """)
@@ -183,7 +183,7 @@ def main():
             round(sum((settle_price - best_bid_price) * size), 2) as maker_bid,
             round(sum((settle_price - best_ask_price) * size), 2) as taker_ask
         FROM user_trade_enriched_v2
-        WHERE username = 'gabagool22' 
+        WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') 
         AND settle_price IS NOT NULL AND mid > 0 
         AND best_bid_price > 0 AND best_ask_price > 0
     """)
@@ -210,7 +210,7 @@ def main():
     df = client.query_df("""
         SELECT price, size, mid, best_bid_price, best_ask_price, settle_price
         FROM user_trade_enriched_v2
-        WHERE username = 'gabagool22' AND settle_price IS NOT NULL 
+        WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER') AND settle_price IS NOT NULL 
         AND mid > 0 AND best_bid_price > 0 AND best_ask_price > 0
     """)
 

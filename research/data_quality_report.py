@@ -17,7 +17,7 @@ import clickhouse_connect
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--username", default="gabagool22")
+    ap.add_argument("--username", default=os.getenv("POLYMARKET_TARGET_USER", "TARGET_USER"))
     ap.add_argument("--lookback-minutes", type=int, default=60)
     args = ap.parse_args()
 

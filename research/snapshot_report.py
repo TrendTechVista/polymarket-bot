@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Offline (Parquet) snapshot report for gabagool22 reverse-engineering.
+Offline (Parquet) snapshot report for target user reverse-engineering.
 
 Works without ClickHouse: point it at a snapshot directory created by `research/snapshot.py`.
 """

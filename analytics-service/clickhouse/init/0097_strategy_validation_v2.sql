@@ -1,6 +1,9 @@
 -- =============================================================================
 -- STRATEGY VALIDATION V2 (with Taker Mode)
 -- =============================================================================
+-- CONFIGURATION: Replace 'TARGET_USER' with the Polymarket username you want
+-- to analyze. Run: sed -i 's/TARGET_USER/actual_username/g' this_file.sql
+-- =============================================================================
 -- Purpose: Validate strategy matching including both maker AND taker fills
 --
 -- Changes from v1:
@@ -110,7 +113,7 @@ WITH
             ) AS likely_would_fill
 
         FROM polybot.user_trade_clean t
-        WHERE t.username = 'gabagool22'
+        WHERE t.username = 'TARGET_USER'
     )
 SELECT
     ts,

@@ -107,7 +107,7 @@ def compute_trade_pnl(df: pd.DataFrame, *, scenario: Scenario, fallback_to_actua
     Trade-level resolution PnL for each row, using different execution-price assumptions.
 
     Notes:
-    - This is accurate for BUY-only flows (gabagool22 appears to be BUY-only).
+    - This is accurate for BUY-only flows (target user appears to be BUY-only).
     - If SELL trades exist, a proper position ledger is needed to compute realized PnL.
     """
     if scenario == "actual" and "realized_pnl" in df.columns:

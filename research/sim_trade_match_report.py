@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Match our *live paper* bot fills to gabagool22 trades in the same time window.
+Match our *live paper* bot fills to target user trades in the same time window.
 
 This is the closest thing to "are we cloning him in real time?" because it compares
 observed gabagool trade prints to our own bot's execution stream (same markets, same clock).
@@ -332,7 +332,7 @@ def _match_one_bucket(
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gab-username", default="gabagool22")
+    ap.add_argument("--gab-username", default=os.getenv("POLYMARKET_TARGET_USER", "TARGET_USER"))
     ap.add_argument("--sim-username", default="polybot-sim")
     ap.add_argument(
         "--sim-source",

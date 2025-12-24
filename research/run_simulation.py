@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backtest and Monte Carlo simulation for gabagool22."""
+"""Backtest and Monte Carlo simulation for target user."""
 
 import pandas as pd
 import numpy as np
@@ -37,7 +37,7 @@ df = client.query_df("""
         outcome as outcome,
         coalesce(nullIf(ws_exec_type, 'UNKNOWN'), exec_type) AS exec_type
     FROM {view}
-    WHERE username = 'gabagool22'
+    WHERE username = os.getenv('POLYMARKET_TARGET_USER', 'TARGET_USER')
     AND settle_price IS NOT NULL
     ORDER BY ts
 """.format(view=view))

@@ -56,7 +56,7 @@ python3 snapshot_report.py --snapshot data/snapshots/<snapshot-id> --write-md da
 
 ## Replication scores (ClickHouse)
 
-### Trade-print distribution match (candidate username vs gabagool22)
+### Trade-print distribution match (candidate username vs TARGET_USER)
 
 ```bash
 cd research
@@ -67,7 +67,7 @@ python3 replication_score.py --candidate <your-username> --start-ts '2025-12-20 
 ### Order-stream match for the live/paper bot (strategy decisions)
 
 This uses `polybot.strategy_gabagool_orders` + `polybot.executor_order_status` to score our bot’s
-decision stream against inferred gabagool22 distributions:
+decision stream against inferred TARGET_USER distributions:
 
 ```bash
 cd research
@@ -85,9 +85,9 @@ python3 calibrate_maker_fill_model.py --hours 24
 python3 calibrate_maker_fill_model.py --hours 24 --run-id <your-run-id>
 ```
 
-### Strict sim-trade match (paper vs gabagool22)
+### Strict sim-trade match (paper vs TARGET_USER)
 
-This compares *trade prints* for gabagool22 vs our paper bot (default `polybot-sim`) in the same window.
+This compares *trade prints* for TARGET_USER vs our paper bot (default `polybot-sim`) in the same window.
 
 ```bash
 cd research

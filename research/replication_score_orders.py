@@ -5,7 +5,7 @@ Order-stream replication score for the live/paper gabagool clone.
 Goal
 ----
 We want to compare *our bot's decision stream* (strategy order events) to the best-available
-gabagool22-inferred distributions. This is not a proof of "exact cloning" (gabagool's cancels/
+target user-inferred distributions. This is not a proof of "exact cloning" (gabagool's cancels/
 re-quotes are unobservable), but it is a high-signal calibration loop:
 
 - Cadence: how frequently we act (PLACE events) vs gabagool's fill cadence (trade prints)
@@ -349,7 +349,7 @@ def _imbalance_frac(up: float, down: float) -> float:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--baseline-username", default="gabagool22")
+    ap.add_argument("--baseline-username", default=os.getenv("POLYMARKET_TARGET_USER", "TARGET_USER"))
     ap.add_argument("--run-id", default=None, help="Optional polybot strategy run_id filter")
     ap.add_argument("--hours", type=int, default=24, help="Default lookback window (used if start/end not provided)")
     ap.add_argument("--start-ts", default=None)

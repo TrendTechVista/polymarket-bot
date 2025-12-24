@@ -340,7 +340,7 @@ public record HftProperties(
 
   /**
    * Gabagool-style Up/Down strategy configuration.
-   * Based on reverse-engineering gabagool22's trading patterns.
+   * Based on reverse-engineering target user's trading patterns.
    */
   public record Gabagool(
       boolean enabled,
@@ -423,7 +423,7 @@ public record HftProperties(
       /**
        * Minimum complete-set edge required to quote both outcomes (edge = 1 - (p_up + p_down)).
        *
-       * Typical observed maker-side edges for gabagool22 are ~0.01–0.02 when WS TOB is fresh.
+       * Typical observed maker-side edges for target user are ~0.01–0.02 when WS TOB is fresh.
        */
       @NotNull @PositiveOrZero @jakarta.validation.constraints.DecimalMax("1.0") Double completeSetMinEdge,
       /**
@@ -457,7 +457,7 @@ public record HftProperties(
       /**
        * Minimum per-market share imbalance required to trigger a fast top-up.
        *
-       * This should typically be low (e.g., 0.01–1.0) because gabagool22 often trades in small sizes (5–20 shares),
+       * This should typically be low (e.g., 0.01–1.0) because target user often trades in small sizes (5–20 shares),
        * and the pairing behavior applies at those sizes too.
        */
       @NotNull @PositiveOrZero BigDecimal completeSetFastTopUpMinShares,
@@ -481,7 +481,7 @@ public record HftProperties(
       /**
        * Enable taker mode for aggressive order placement.
        * When enabled, the strategy will sometimes cross the spread (buy at ask) instead of posting at bid.
-       * Based on gabagool22's behavior: ~39% of trades are taker fills.
+       * Based on target user's behavior: ~39% of trades are taker fills.
        */
       @NotNull Boolean takerModeEnabled,
       /**
@@ -590,7 +590,7 @@ public record HftProperties(
         completeSetFastTopUpMinEdge = 0.0;
       }
       if (takerModeEnabled == null) {
-        takerModeEnabled = false;  // Disabled by default - gabagool22's taker fills come from FAST_TOP_UP, not explicit taker mode
+        takerModeEnabled = false;  // Disabled by default - target user's taker fills come from FAST_TOP_UP, not explicit taker mode
       }
       if (takerModeMaxEdge == null) {
         takerModeMaxEdge = 0.015;  // Take when edge < 1.5% (low edge = fleeting opportunity)

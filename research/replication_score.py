@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compare a candidate bot username to gabagool22 (distribution-level "replication score").
+Compare a candidate bot username to target user (distribution-level "replication score").
 
 This does NOT prove "exact" replication (fills don't expose cancellations/quotes), but it gives a
 fast quantitative checklist to catch obvious mismatches:
@@ -116,7 +116,7 @@ def fetch_timing_buckets(client, view: str, username: str, where_time: str) -> p
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--baseline", default="gabagool22")
+    ap.add_argument("--baseline", default=os.getenv("POLYMARKET_TARGET_USER", "TARGET_USER"))
     ap.add_argument("--candidate", required=True)
     ap.add_argument("--start-ts", default=None)
     ap.add_argument("--end-ts", default=None)

@@ -1,10 +1,10 @@
-# gabagool22 Strategy Reverse-Engineering — Addendum (Data Limits + Sizing + Portfolio)
+# TARGET_USER Strategy Reverse-Engineering — Addendum (Data Limits + Sizing + Portfolio)
 
 This addendum summarizes what the current dataset can/can’t support for “exact” strategy matching, and lays out a concrete path to get to a high-fidelity replica as you keep collecting data.
 
 ## Update (Frozen Snapshot 2025-12-19)
 
-Using `research/data/snapshots/gabagool22-20251219T215124+0000/`:
+Using `research/data/snapshots/TARGET_USER-20251219T215124+0000/`:
 
 - Trades: **44,093** (**100% BUY**), resolved: **39,864**
 - Notional: **~$324,967** (sum of `price * size`)
@@ -79,7 +79,7 @@ Interpretation:
 
 ## Frozen Snapshot Used (For Older Numbers Below)
 
-- Latest feature snapshot: `research/data/snapshots/gabagool22-20251216T171416+0000/features.parquet`
+- Latest feature snapshot: `research/data/snapshots/TARGET_USER-20251216T171416+0000/features.parquet`
 - Resolved trades: **15,573**
 - Total realized PnL (resolved): **$2,057.87**
 
@@ -150,7 +150,7 @@ Using `polybot.user_trade_onchain_pair` (1,185 trades with on-chain `OrdersMatch
 This strongly suggests the “exact replica” must model **how fills route** (paired outcome vs collateral leg), not only
 the visible trade prints. A fast way to monitor this live is:
 
-`python research/onchain_match_report.py --username gabagool22`
+`python research/onchain_match_report.py --username TARGET_USER`
 
 ## 2) Why “100% exact match” is not currently provable
 
@@ -254,7 +254,7 @@ Initial research (Dec 14-18, 2025) showed:
 - DOWN trades: **+$11,932 PnL** (profitable)
 - UP trades: **-$6,790 PnL** (losing)
 
-This was **incorrectly interpreted** as gabagool22 having a directional bias toward DOWN.
+This was **incorrectly interpreted** as TARGET_USER having a directional bias toward DOWN.
 
 ### Root Cause: BTC Was Trending Down
 

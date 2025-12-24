@@ -70,7 +70,7 @@ curl http://localhost:8084/api/monitoring/links
 Response:
 ```json
 {
-  "grafana": "http://localhost:3000 (admin/polybot123)",
+  "grafana": "http://localhost:3000 (admin/${GRAFANA_ADMIN_PASSWORD})",
   "prometheus": "http://localhost:9090",
   "alertmanager": "http://localhost:9093",
   "this_service": "http://localhost:8084/actuator/health"
