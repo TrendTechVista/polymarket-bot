@@ -43,7 +43,7 @@ hft:
       complete-set-fast-top-up-min-seconds-after-fill: 1   # Min seconds after fill
       complete-set-fast-top-up-max-seconds-after-fill: 60  # Max seconds after fill
       complete-set-fast-top-up-cooldown-millis: 1000  # Cooldown between fast top-ups
-      complete-set-fast-top-up-min-edge: -0.005       # Allow slight neg edge for pair completion
+      complete-set-fast-top-up-min-edge: 0            # Breakeven or better for pair completion
 
       # Taker mode - cross the spread when edge is favorable
       taker-mode-enabled: true
