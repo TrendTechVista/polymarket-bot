@@ -132,25 +132,24 @@ public class OrderManager {
 
     /**
      * Cancel and replace an existing order if price/size changed.
-     * Returns true if the order was replaced (or no existing order), false if replacement was skipped.
      */
-    public boolean maybeReplaceOrder(String tokenId, BigDecimal newPrice, BigDecimal newSize,
-                                     GabagoolConfig cfg, CancelReason cancelReason,
-                                     long secondsToEnd, TopOfBook book, TopOfBook otherBook) {
+    public ReplaceDecision maybeReplaceOrder(String tokenId, BigDecimal newPrice, BigDecimal newSize,
+                                             GabagoolConfig cfg, CancelReason cancelReason,
+                                             long secondsToEnd, TopOfBook book, TopOfBook otherBook) {
         OrderState existing = ordersByTokenId.get(tokenId);
         if (existing == null) {
-            return true; // No existing order, can place new one
+            return ReplaceDecision.PLACE; // No existing order, can place new one
         }
 
         long ageMillis = Duration.between(existing.placedAt(), clock.instant()).toMillis();
         if (ageMillis < cfg.minReplaceMillis()) {
-            return false; // Too soon to replace
+            return ReplaceDecision.SKIP; // Too soon to replace
         }
 
         boolean samePrice = existing.price() != null && existing.price().compareTo(newPrice) == 0;
         boolean sameSize = existing.size() != null && existing.size().compareTo(newSize) == 0;
         if (samePrice && sameSize) {
-            return false; // No change needed
+            return ReplaceDecision.SKIP; // No change needed
         }
 
         CancelReason reason = (!samePrice && !sameSize)
@@ -159,7 +158,7 @@ public class OrderManager {
 
         safeCancel(existing, reason, secondsToEnd, book, otherBook);
         ordersByTokenId.remove(tokenId);
-        return true;
+        return ReplaceDecision.REPLACE;
     }
 
     /**
@@ -367,6 +366,10 @@ public class OrderManager {
 
     public enum PlaceReason {
         QUOTE, REPLACE, TOP_UP, FAST_TOP_UP, TAKER
+    }
+
+    public enum ReplaceDecision {
+        SKIP, PLACE, REPLACE
     }
 
     public enum CancelReason {

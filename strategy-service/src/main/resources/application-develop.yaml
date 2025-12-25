@@ -2,17 +2,21 @@ hft:
   mode: PAPER
   events:
     enabled: true
+    market-ws-snapshot-publish-millis: 1000
+    market-ws-cache-publish-on-start: true
   executor:
     base-url: http://localhost:8080
     send-live-ack: false
   polymarket:
     market-ws-enabled: true
     gamma-url: https://gamma-api.polymarket.com
+    market-ws-cache-path: .cache/ws/market-ws-cache.strategy.json
+    market-ws-cache-flush-millis: 5000
   strategy:
     gabagool:
       enabled: true
       refresh-millis: 500
-      min-replace-millis: 2000          # Min time before replacing an order
+      min-replace-millis: 500           # Min time before replacing an order
       min-seconds-to-end: 0
       max-seconds-to-end: 3600
       improve-ticks: 0
@@ -33,22 +37,22 @@ hft:
       # NOTE: Top traders don't pre-filter by edge - they quote both sides aggressively
       # Edge emerges from spread capture + inventory skewing, not from strict filtering
       complete-set-min-edge: 0.001                    # Near-zero: aggressive quoting
-      complete-set-max-skew-ticks: 2                  # Max ticks to skew based on inventory
-      complete-set-imbalance-shares-for-max-skew: 100 # Shares imbalance for max skew
+      complete-set-max-skew-ticks: 0                  # Max ticks to skew based on inventory
+      complete-set-imbalance-shares-for-max-skew: 5000 # Shares imbalance for max skew
       complete-set-top-up-enabled: true
       complete-set-top-up-seconds-to-end: 120         # Start top-up this far from end
-      complete-set-top-up-min-shares: 5               # Min imbalance to trigger top-up
-      complete-set-fast-top-up-enabled: true
-      complete-set-fast-top-up-min-shares: 5          # Min shares for fast top-up
-      complete-set-fast-top-up-min-seconds-after-fill: 1   # Min seconds after fill
-      complete-set-fast-top-up-max-seconds-after-fill: 60  # Max seconds after fill
-      complete-set-fast-top-up-cooldown-millis: 1000  # Cooldown between fast top-ups
+      complete-set-top-up-min-shares: 80              # Min imbalance to trigger top-up
+      complete-set-fast-top-up-enabled: false
+      complete-set-fast-top-up-min-shares: 30         # Min shares for fast top-up
+      complete-set-fast-top-up-min-seconds-after-fill: 30  # Min seconds after fill
+      complete-set-fast-top-up-max-seconds-after-fill: 180 # Max seconds after fill
+      complete-set-fast-top-up-cooldown-millis: 45000 # Cooldown between fast top-ups
       complete-set-fast-top-up-min-edge: 0            # Breakeven or better for pair completion
 
       # Taker mode - cross the spread when edge is favorable
       taker-mode-enabled: true
-      taker-mode-max-edge: 0.02                       # Max edge to take (2 cents)
-      taker-mode-max-spread: 0.03                     # Max spread to cross (3 cents)
+      taker-mode-max-edge: 0.004                      # Max edge to take (0.4 cents)
+      taker-mode-max-spread: 0.01                     # Max spread to cross (1 cent)
 
 logging:
   level:

@@ -247,12 +247,15 @@ public class GabagoolDirectionalEngine {
         BigDecimal shares = quoteCalculator.calculateShares(market, entryPrice, cfg, secondsToEnd, exposure);
         if (shares == null) return;
 
-        if (!orderManager.maybeReplaceOrder(tokenId, entryPrice, shares, cfg, CancelReason.REPLACE_PRICE, secondsToEnd, book, otherBook)) {
+        OrderState existing = orderManager.getOrder(tokenId);
+        OrderManager.ReplaceDecision decision = orderManager.maybeReplaceOrder(
+                tokenId, entryPrice, shares, cfg, CancelReason.REPLACE_PRICE, secondsToEnd, book, otherBook);
+        if (decision == OrderManager.ReplaceDecision.SKIP) {
             return;
         }
 
-        OrderState existing = orderManager.getOrder(tokenId);
-        orderManager.placeOrder(market, tokenId, direction, entryPrice, shares, secondsToEnd, tickSize, book, otherBook, existing, PlaceReason.QUOTE);
+        PlaceReason reason = decision == OrderManager.ReplaceDecision.REPLACE ? PlaceReason.REPLACE : PlaceReason.QUOTE;
+        orderManager.placeOrder(market, tokenId, direction, entryPrice, shares, secondsToEnd, tickSize, book, otherBook, existing, reason);
     }
 
     private void maybeTakeToken(GabagoolMarket market, String tokenId, Direction direction,
