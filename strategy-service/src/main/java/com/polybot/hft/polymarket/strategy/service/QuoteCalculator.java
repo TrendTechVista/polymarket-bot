@@ -229,12 +229,13 @@ public class QuoteCalculator {
             return BigDecimal.valueOf(14);
         }
         if (slug.startsWith("bitcoin-up-or-down-")) {
+            // BTC 1h sizing schedule - derived from analysis of top trader behavior
             if (secondsToEnd < 60) return BigDecimal.valueOf(9);
-            if (secondsToEnd < 180) return BigDecimal.valueOf(10);
-            if (secondsToEnd < 300) return BigDecimal.valueOf(11);
-            if (secondsToEnd < 600) return BigDecimal.valueOf(12);
+            if (secondsToEnd < 180) return BigDecimal.valueOf(11);
+            if (secondsToEnd < 300) return BigDecimal.valueOf(12);
+            if (secondsToEnd < 600) return BigDecimal.valueOf(13);
             if (secondsToEnd < 900) return BigDecimal.valueOf(14);
-            if (secondsToEnd < 1200) return BigDecimal.valueOf(15);
+            if (secondsToEnd < 1200) return BigDecimal.valueOf(16);
             if (secondsToEnd < 1800) return BigDecimal.valueOf(17);
             return BigDecimal.valueOf(18);
         }

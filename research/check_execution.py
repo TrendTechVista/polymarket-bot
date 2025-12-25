@@ -11,7 +11,15 @@ def log(msg):
     output_lines.append(msg)
     print(msg, flush=True)
 
-snapshot = Path('/Users/antoniostano/programming/polybot/research/data/snapshots/target user-20251216T113830+0000')
+# Find the latest snapshot
+snapshots_dir = Path(__file__).parent / 'data' / 'snapshots'
+snapshots = sorted([d for d in snapshots_dir.iterdir() if d.is_dir()])
+if not snapshots:
+    print("No snapshots found. Run snapshot_report.py first.")
+    sys.exit(1)
+snapshot = snapshots[-1]
+print(f"Using snapshot: {snapshot.name}")
+
 df = pd.read_parquet(snapshot / 'features.parquet')
 
 df['settle_price'] = pd.to_numeric(df.get('settle_price'), errors='coerce')
@@ -54,6 +62,7 @@ log(f'Mid PnL (if traded at mid): ${with_mid["pnl_at_mid"].sum():.2f}')
 log(f'Execution edge: ${with_mid["pnl_actual"].sum() - with_mid["pnl_at_mid"].sum():.2f}')
 
 # Write to file
-with open('/Users/antoniostano/programming/polybot/research/exec_output.txt', 'w') as f:
+output_path = Path(__file__).parent / 'exec_output.txt'
+with open(output_path, 'w') as f:
     f.write('\n'.join(output_lines))
 

@@ -30,7 +30,9 @@ hft:
       max-total-bankroll-fraction: 0.5
 
       # Complete-set arbitrage configuration
-      complete-set-min-edge: 0.005                    # Minimum edge to accept (0.5 cents)
+      # NOTE: Top traders don't pre-filter by edge - they quote both sides aggressively
+      # Edge emerges from spread capture + inventory skewing, not from strict filtering
+      complete-set-min-edge: 0.001                    # Near-zero: aggressive quoting
       complete-set-max-skew-ticks: 2                  # Max ticks to skew based on inventory
       complete-set-imbalance-shares-for-max-skew: 100 # Shares imbalance for max skew
       complete-set-top-up-enabled: true
@@ -41,7 +43,7 @@ hft:
       complete-set-fast-top-up-min-seconds-after-fill: 1   # Min seconds after fill
       complete-set-fast-top-up-max-seconds-after-fill: 60  # Max seconds after fill
       complete-set-fast-top-up-cooldown-millis: 1000  # Cooldown between fast top-ups
-      complete-set-fast-top-up-min-edge: 0.005        # Min edge for fast top-up
+      complete-set-fast-top-up-min-edge: -0.005       # Allow slight neg edge for pair completion
 
       # Taker mode - cross the spread when edge is favorable
       taker-mode-enabled: true

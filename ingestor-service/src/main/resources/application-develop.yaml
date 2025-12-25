@@ -24,7 +24,7 @@ ingestor:
     page-size: 500
   polygon:
     enabled: true
-    rpc-url: https://polygon-rpc.com
+    rpc-url: ${POLYGON_RPC_URL:https://polygon-rpc.com}
     poll-interval-millis: 100
     max-receipts-per-poll: 25
     request-delay-millis: 100

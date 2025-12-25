@@ -24,7 +24,7 @@ executor:
     maker-fill-fraction-of-remaining: 0.25
 
   onchain:
-    rpc-url: https://polygon-rpc.com
+    rpc-url: ${POLYGON_RPC_URL:https://polygon-rpc.com}
     proxy-wallet-factory-address: ""
 
   settlement:
