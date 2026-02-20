@@ -71,51 +71,73 @@ Status: public repo, active development.
 ## Quick Start
 
 ### Prerequisites
-- Java 21+
+- Amazon Corretto 21 (recommended) or any Java 21+
 - Maven 3.8+
-- Docker & Docker Compose
+- Docker Engine/Desktop with Compose plugin
 - Python 3.11+ (for research tools)
 
 ### 1. Clone and Configure
 
 ```bash
-git clone https://github.com/yourusername/polybot.git
+git clone https://github.com/ent0n29/polybot.git
 cd polybot
 
-# Copy environment template
+# Optional: copy environment template for live trading/research config
 cp .env.example .env
 
-# Edit .env with your configuration
-# At minimum, set POLYMARKET_TARGET_USER to analyze
+# Important: Spring Boot does not auto-load .env.
+# Export env vars in your shell when needed:
+set -a; source .env; set +a
 ```
 
-### 2. Start Infrastructure
+### 2. Start All Services (Recommended)
 
 ```bash
-# Start ClickHouse and Kafka
-docker-compose -f docker-compose.analytics.yaml up -d
-
-# Optional: Start monitoring stack
-docker-compose -f docker-compose.monitoring.yaml up -d
+./start-all-services.sh
 ```
 
-### 3. Build and Run Services
+This script will:
+- build all modules if needed
+- start infrastructure stacks (Redpanda, ClickHouse, Prometheus, Grafana, Alertmanager)
+- start Java services in `develop` profile
+- write logs and PID files under `logs/`
+
+### 3. Verify Health
 
 ```bash
-# Build all services
+curl http://localhost:8080/actuator/health  # executor
+curl http://localhost:8081/actuator/health  # strategy
+curl http://localhost:8082/actuator/health  # analytics
+curl http://localhost:8083/actuator/health  # ingestor
+curl http://localhost:8084/actuator/health  # infrastructure orchestrator
+
+# ClickHouse sanity check
+curl http://localhost:8123 --data "SELECT 1"
+```
+
+### 4. Stop Services
+
+```bash
+./stop-all-services.sh
+```
+
+### 5. Manual Startup (Alternative)
+
+```bash
+# Build all modules
 mvn clean package -DskipTests
 
-# Start executor (paper trading mode by default)
-cd executor-service && mvn spring-boot:run -Dspring-boot.run.profiles=develop
+# Start orchestrator first (it manages analytics + monitoring Docker stacks)
+java -jar infrastructure-orchestrator-service/target/infrastructure-orchestrator-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=develop
 
-# Start strategy service (in another terminal)
-cd strategy-service && mvn spring-boot:run -Dspring-boot.run.profiles=develop
-
-# Start ingestor (in another terminal) - ingests target user's trades
-cd ingestor-service && mvn spring-boot:run -Dspring-boot.run.profiles=develop
+# Then run core services (separate terminals)
+java -jar executor-service/target/executor-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=develop
+java -jar strategy-service/target/strategy-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=develop
+java -jar ingestor-service/target/ingestor-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=develop
+java -jar analytics-service/target/analytics-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=develop
 ```
 
-### 4. Research & Analysis
+### 6. Research & Analysis
 
 ```bash
 cd research
@@ -174,11 +196,14 @@ Runs trading strategies and generates signals.
 curl http://localhost:8081/api/strategy/status
 ```
 
-### Ingestor Service (Port 8082)
+### Ingestor Service (Port 8083)
 Ingests market data and user trades into ClickHouse.
 
-### Analytics Service (Port 8083)
+### Analytics Service (Port 8082)
 Provides analytics APIs over ClickHouse data.
+
+### Infrastructure Orchestrator (Port 8084)
+Manages Docker infrastructure stacks lifecycle (analytics + monitoring).
 
 ## Included Strategy: Complete-Set Arbitrage
 
