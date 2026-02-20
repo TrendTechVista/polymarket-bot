@@ -6,6 +6,17 @@ Polybot provides a complete trading infrastructure for [Polymarket](https://poly
 
 ![Strategy Analysis Dashboard](docs/showcase_readme.png)
 
+## Future Work: AWARE Fund
+
+Polybot remains the core execution and market-data infrastructure.  
+**AWARE** is the next product layer built on top of it: trader intelligence, PSI index construction, fund mirroring, and investor-facing API/UI.
+
+- Infrastructure foundation: Polybot
+- Intelligence/product layer: AWARE
+- Repository: https://github.com/ent0n29/aware
+
+Status: public repo, active development.
+
 ## Features
 
 ### Trading Infrastructure
