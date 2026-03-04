@@ -14,8 +14,8 @@ Polybot is a multi-service system for:
 
 Polybot is the execution and market-data foundation for **AWARE**, the next product layer (trader intelligence, PSI indices, fund mirroring, API/UI).
 
-- Polybot repo: https://github.com/ent0n29/polybot
-- AWARE repo: https://github.com/ent0n29/aware
+- Polybot repo: https://github.com/TrendTechVista/polymarket-bot
+- AWARE repo: https://github.com/TrendTechVista/polymarket-bot
 
 ## What You Get
 
